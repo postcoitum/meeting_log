@@ -1,0 +1,12 @@
+# Core transcription (mlx-whisper, Apple-Silicon Metal acceleration)
+mlx-whisper
+tqdm
+
+# Speaker diarization
+pyannote.audio>=3.1.0
+torch
+torchaudio
+
+# Audio format conversion (install separately — not a pip package)
+# brew install ffmpeg    # macOS
+# sudo apt install ffmpeg  # Ubuntu/Debian

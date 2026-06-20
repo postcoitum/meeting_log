@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+env/
+
+# Secrets / environment
+.env
+
+# Audio inputs / intermediates
+*.wav
+*.m4a
+*.mp3
+
+# Transcript outputs (keep requirements.txt)
+*.txt
+!requirements.txt
+
+# macOS
+.DS_Store
