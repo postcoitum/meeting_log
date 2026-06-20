@@ -1,5 +1,7 @@
 # Meeting Recorder
 
+> CLI tool that transcribes meetings and labels who said what — built for Apple Silicon, optimised for Korean.
+
 화자별로 구분된 한국어/영어 회의 자동 전사 CLI 도구입니다.
 오디오 파일을 받아 **누가 무슨 말을 했는지**를 텍스트로 정리해 줍니다.
 
