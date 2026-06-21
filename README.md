@@ -169,14 +169,16 @@ python3 meeting_recorder.py --audio meeting.m4a --max-speakers 2 --hf-token $HF_
 
 pyannote.audio **4.x**부터 파이프라인 반환값이 dict가 아니라 `DiarizeOutput`
 데이터클래스로 바뀌었습니다. `.get("diarization")`은 더 이상 동작하지 않습니다.
-→ 버전에 무관하게 처리합니다:
+→ 버전별로 분기해 처리합니다:
 
 ```python
 result = pipeline(str(wav_path), **diar_kwargs)
-if hasattr(result, "itertracks"):          # 3.x: Annotation
+if hasattr(result, "itertracks"):           # 3.x: Annotation 직접 반환
     annotation = result
-else:                                       # 4.x: DiarizeOutput
-    annotation = getattr(result, "speaker_diarization", result)
+elif hasattr(result, "speaker_diarization"): # 4.x: DiarizeOutput 래퍼
+    annotation = result.speaker_diarization
+else:
+    raise RuntimeError(f"Unexpected pyannote output type: {type(result).__name__}")
 ```
 
 ### c. `use_auth_token` deprecated
@@ -221,6 +223,42 @@ Torch version 2.x.x has not been tested with coremltools ...
 
 닮은 목소리거나 녹음 품질이 낮으면 자동 감지가 2명을 1명으로 합칠 수 있습니다.
 화자 수를 알고 있다면 `--speakers 2`처럼 명시하는 것이 가장 정확합니다.
+
+---
+
+## 업데이트 노트
+
+### v1.1 — 코드 리뷰 버그 수정
+
+**`--model-repo` 경로 판별 오류 수정** (`meeting_recorder.py`)
+
+`openai/whisper-large-v3` 같은 타사 HuggingFace repo를 `--model-repo`에 넘기면
+`"로컬 경로를 찾을 수 없음"` 오류가 발생했습니다. 이전 코드는
+`mlx-community/`로 시작하는 repo만 HF repo로 인식했기 때문입니다.
+→ `org/model` 형식의 문자열은 모두 HF repo ID로 인식하도록 정규식으로 교체했습니다.
+
+**pyannote 4.x 호환성 수정** (`meeting_recorder.py`)
+
+이전 코드의 `getattr(result, "speaker_diarization", result)` fallback은
+`speaker_diarization` 속성이 없으면 `result` 자체를 그대로 반환해,
+결국 동일한 `AttributeError`를 다음 줄에서 다시 냈습니다.
+→ `hasattr` 분기로 교체하고, 둘 다 없으면 `RuntimeError`로 명확히 알립니다.
+
+**화자 수 인자 처리 수정** (`meeting_recorder.py`)
+
+`if num_speakers:` 방식은 `num_speakers=0`일 때 무음으로 무시하는 falsy 체크 문제가 있습니다.
+→ `if num_speakers is not None:` 으로 수정해 의도한 값이 항상 pyannote에 전달됩니다.
+
+**MPS 에러 무음 삼킴 수정** (`meeting_recorder.py`)
+
+`except Exception: pass`로 GPU 관련 모든 에러를 조용히 무시했습니다.
+→ `ImportError`(torch 미설치)는 무음 처리, 그 외 예외는 경고 메시지로 출력합니다.
+
+**`merge_consecutive` O(n²) 문자열 연결 수정** (`speaker_utils.py`)
+
+긴 회의에서 같은 화자의 발화를 합칠 때 `+=` 방식의 문자열 연결이 반복되면
+세그먼트 수에 비례해 메모리·시간이 낭비됩니다.
+→ 텍스트 조각을 리스트로 모았다가 마지막에 `" ".join()`으로 합칩니다.
 
 ---
 
