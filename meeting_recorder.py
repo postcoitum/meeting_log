@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import itertools
 import os
+import re
 import sys
 import threading
 import time
@@ -29,6 +30,10 @@ from speaker_utils import (
 )
 
 SAMPLING_RATE = 16000
+
+# HuggingFace repo IDs have the form "org/model" (exactly one "/", no path chars).
+# Used to distinguish remote HF repos from local paths in --model-repo validation.
+_HF_REPO_ID = re.compile(r"^[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+$")
 
 # Whisper size shorthand → mlx-community HuggingFace repo.
 # Note the naming is inconsistent upstream: turbo has no "-mlx" suffix.
@@ -143,22 +148,29 @@ def diarize_audio(
         import torch
         if torch.backends.mps.is_available():
             pipeline = pipeline.to(torch.device("mps"))
-    except Exception:
+    except ImportError:
         pass
+    except Exception as e:
+        print(f"  Warning: could not move pipeline to MPS: {e}", file=sys.stderr)
 
     diar_kwargs: dict[str, int] = {}
-    if num_speakers:
+    if num_speakers is not None:
         diar_kwargs["num_speakers"] = num_speakers
-    elif max_speakers:
+    elif max_speakers is not None:
         diar_kwargs["max_speakers"] = max_speakers
     result = pipeline(str(wav_path), **diar_kwargs)
 
-    # pyannote.audio 4.x returns DiarizeOutput dataclass;
-    # 3.x returns an Annotation directly with itertracks().
+    # pyannote.audio 3.x returns an Annotation with .itertracks();
+    # 4.x wraps it in a DiarizeOutput dataclass under .speaker_diarization.
     if hasattr(result, "itertracks"):
         annotation = result
+    elif hasattr(result, "speaker_diarization"):
+        annotation = result.speaker_diarization
     else:
-        annotation = getattr(result, "speaker_diarization", result)
+        raise RuntimeError(
+            f"Unexpected pyannote output type: {type(result).__name__}. "
+            "Expected Annotation (.itertracks) or DiarizeOutput (.speaker_diarization)."
+        )
 
     return [
         (turn.start, turn.end, speaker)
@@ -270,9 +282,9 @@ def main() -> None:
     model_repo: str = args.model_repo or MLX_MODEL_MAP[args.model]
 
     # If an explicit local path was given, verify it exists.
-    if args.model_repo and (
-        "/" in args.model_repo and not args.model_repo.startswith("mlx-community/")
-    ) and not Path(args.model_repo).exists():
+    # HF repo IDs look like "org/model" (exactly one "/", no leading path chars).
+    # Anything else — absolute paths, "./rel", bare names — is treated as local.
+    if args.model_repo and not _HF_REPO_ID.match(args.model_repo) and not Path(args.model_repo).exists():
         sys.exit(f"Error: local model path not found: {args.model_repo}")
 
     output_path = (
@@ -336,7 +348,7 @@ def main() -> None:
         # --- Resolve speaker names ---
         n_speakers = len({spk for _, _, spk in diar_segs})
         print(f"  → {n_speakers} speaker(s) identified")
-        if num_speakers and n_speakers != num_speakers:
+        if num_speakers is not None and n_speakers != num_speakers:
             print(f"  Warning: you requested {num_speakers} speaker(s) but "
                   f"{n_speakers} were found. Continuing.")
 

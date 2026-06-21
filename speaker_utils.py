@@ -68,15 +68,16 @@ def merge_consecutive(segments: list[NamedSeg]) -> list[NamedSeg]:
     if not segments:
         return []
 
-    merged: list[list] = [list(segments[0])]  # mutable copy of first seg
+    ts0, spk0, txt0 = segments[0]
+    groups: list[list] = [[ts0, spk0, [txt0]]]
 
     for ts, speaker, text in segments[1:]:
-        if speaker == merged[-1][1]:
-            merged[-1][2] = merged[-1][2] + " " + text
+        if speaker == groups[-1][1]:
+            groups[-1][2].append(text)
         else:
-            merged.append([ts, speaker, text])
+            groups.append([ts, speaker, [text]])
 
-    return [(ts, spk, txt) for ts, spk, txt in merged]
+    return [(ts, spk, " ".join(parts)) for ts, spk, parts in groups]
 
 
 def format_transcript(
