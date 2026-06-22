@@ -3,8 +3,42 @@
 <head>
   <meta charset="utf-8">
   <title>회의록</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 <body>
-  <h1 id="status">회의록 앱</h1>
+  <header class="topbar">
+    <button id="toggle-sidebar" aria-label="사이드바 토글">☰</button>
+    <span class="app-title">회의록</span>
+    <span id="progress" class="progress"></span>
+  </header>
+  <main class="layout">
+    <aside id="sidebar" class="pane sidebar">
+      <div class="pane-head">
+        <span>회의 목록</span>
+        <button id="edit-title" aria-label="제목 수정">✎</button>
+      </div>
+      <div id="meeting-list" class="list"></div>
+      <button id="new-meeting" class="new-btn">+ 새 회의</button>
+    </aside>
+    <section class="pane summary">
+      <div class="pane-head"><span>회의 요약</span></div>
+      <textarea id="summary" class="editor" placeholder="로컬 AI 요약…"></textarea>
+    </section>
+    <section class="right">
+      <div id="memo-pane" class="pane memo">
+        <div class="pane-head">
+          <span>내 메모</span>
+          <button id="toggle-memo" aria-label="메모 접기">⌄</button>
+        </div>
+        <textarea id="memo" class="editor" placeholder="여기에 메모… (마크다운)"></textarea>
+      </div>
+      <div class="pane transcript">
+        <div class="pane-head"><span>스크립트 원본</span></div>
+        <pre id="transcript" class="script"></pre>
+      </div>
+    </section>
+  </main>
+  <script src="app.js"></script>
 </body>
 </html>

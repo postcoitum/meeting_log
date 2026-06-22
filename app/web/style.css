@@ -1,0 +1,49 @@
+* { box-sizing: border-box; margin: 0; }
+body {
+  font-family: -apple-system, "Apple SD Gothic Neo", sans-serif;
+  height: 100vh; color: #3c3324;
+  background: linear-gradient(135deg, #d8c7b0, #e7d9c4 55%, #cbb89c);
+}
+.topbar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 16px; -webkit-app-region: drag;
+}
+.topbar button { -webkit-app-region: no-drag; }
+.app-title { font-size: 13px; color: #4a3f30; }
+.progress { margin-left: auto; font-size: 12px; color: #8a6d3b; }
+.layout {
+  display: grid; grid-template-columns: 200px 1fr 1fr; gap: 12px;
+  padding: 0 14px 14px; height: calc(100vh - 48px);
+}
+.layout.sidebar-hidden { grid-template-columns: 0 1fr 1fr; }
+.layout.sidebar-hidden .sidebar { display: none; }
+.right { display: grid; grid-template-rows: 1fr 1.5fr; gap: 12px; }
+.right.memo-collapsed { grid-template-rows: 40px 1fr; }
+.pane {
+  background: rgba(255, 252, 246, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: 12px; padding: 12px;
+  display: flex; flex-direction: column;
+  backdrop-filter: blur(12px); overflow: hidden;
+}
+.pane-head {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 13px; font-weight: 500; color: #4a3f30; margin-bottom: 8px;
+}
+.pane-head button { background: none; border: none; cursor: pointer; font-size: 14px; color: #8a7a64; }
+.list { flex: 1; overflow-y: auto; }
+.date-group { font-size: 11px; color: #9a8a72; margin: 8px 0 4px; }
+.meeting-item {
+  padding: 7px 9px; border-radius: 8px; font-size: 12px; cursor: pointer;
+  background: rgba(255, 252, 246, 0.4); margin-bottom: 6px; color: #5c5343;
+}
+.meeting-item.active { background: rgba(255, 252, 246, 0.85); color: #3c3324; }
+.new-btn {
+  margin-top: 8px; background: rgba(120, 90, 55, 0.85); color: #fff;
+  border: none; border-radius: 8px; padding: 9px; font-size: 12px; cursor: pointer;
+}
+.editor {
+  flex: 1; resize: none; border: none; background: transparent;
+  font-size: 13px; line-height: 1.7; color: #3c3324; outline: none;
+}
+.script { flex: 1; overflow-y: auto; font-size: 12px; line-height: 1.7; color: #5c5343; white-space: pre-wrap; }
