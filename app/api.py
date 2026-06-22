@@ -32,7 +32,12 @@ class Api:
         return True
 
     def add_meeting(self, audio_path: str) -> dict:
-        transcript = transcribe_meeting(audio_path, self._hf_token)
+        def report(stage: str) -> None:
+            win = webview.active_window()
+            if win:
+                win.evaluate_js(f"window.dispatchEvent(new CustomEvent('progress', {{detail: {stage!r} }}))")
+        transcript = transcribe_meeting(audio_path, self._hf_token, progress=report)
+        report("요약 중…")
         summary = summarize(transcript)
         title = Path(audio_path).stem
         created = datetime.now(timezone.utc).isoformat()

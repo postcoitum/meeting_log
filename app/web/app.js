@@ -57,6 +57,7 @@ const saveMemo = debounce(() => {
 function bind() {
   document.getElementById("summary").addEventListener("input", saveSummary);
   document.getElementById("memo").addEventListener("input", saveMemo);
+  window.addEventListener("progress", (e) => setProgress(e.detail));
 
   document.getElementById("toggle-sidebar").onclick = () =>
     document.querySelector(".layout").classList.toggle("sidebar-hidden");
