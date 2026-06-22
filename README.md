@@ -54,6 +54,25 @@ export HF_TOKEN=hf_xxxxxxxxxxxxxxxxxxxx
 
 ---
 
+## 데스크톱 앱 (GUI)
+
+녹음 파일을 올려 전사·화자분리하고, 로컬 AI 요약·마크다운 메모·로컬 저장까지
+하나의 창에서 처리하는 데스크톱 앱입니다 (pywebview 기반, Apple Silicon).
+
+```bash
+pip install -r requirements.txt
+export HF_TOKEN=hf_xxx
+python3 -m app.main
+```
+
+- **좌측**: 회의 목록(날짜별, 제목 수정) · **중앙**: 로컬 AI 요약(마크다운 편집)
+- **우측 상단**: 내 메모 · **우측 하단**: 전사 스크립트 원본
+- 상단바의 토글로 사이드바·메모 접기 가능
+- 모든 데이터는 로컬 SQLite(`~/.meeting_log/meetings.db`)에 저장 (외부 전송 없음)
+- 요약은 로컬 LLM(`mlx-community/Qwen2.5-3B-Instruct-4bit`)으로 생성
+
+---
+
 ## 사용법
 
 ### 기본 (화자 수 자동 감지, 이름 자동 라벨)
