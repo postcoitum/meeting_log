@@ -10,3 +10,7 @@ torchaudio
 # Audio format conversion (install separately — not a pip package)
 # brew install ffmpeg    # macOS
 # sudo apt install ffmpeg  # Ubuntu/Debian
+
+# 데스크톱 앱
+pywebview
+mlx-lm
