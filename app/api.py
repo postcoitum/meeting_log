@@ -5,6 +5,8 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
+import webview
+
 from app.store import Store
 from app.transcribe import transcribe_meeting
 from app.summarizer import summarize
@@ -45,3 +47,12 @@ class Api:
         summary = summarize(m["transcript"])
         self._store.update_fields(meeting_id, summary_md=summary)
         return summary
+
+    def pick_audio(self) -> str:
+        result = webview.active_window().create_file_dialog(
+            dialog_type=webview.OPEN_DIALOG,
+            file_types=("오디오 (*.m4a;*.mp3;*.wav;*.mp4)",),
+        )
+        if not result:
+            return ""
+        return result[0]

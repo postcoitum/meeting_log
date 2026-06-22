@@ -29,3 +29,17 @@ def test_list_after_add(tmp_path, monkeypatch):
     api = make_api(tmp_path, monkeypatch)
     api.add_meeting("/a/one.m4a")
     assert len(api.list_meetings()) == 1
+
+
+def test_pick_audio_returns_first(tmp_path, monkeypatch):
+    api = make_api(tmp_path, monkeypatch)
+    monkeypatch.setattr(api_mod.webview, "active_window",
+                        lambda: type("W", (), {"create_file_dialog": lambda s, **k: ["/x.m4a"]})())
+    assert api.pick_audio() == "/x.m4a"
+
+
+def test_pick_audio_cancel_returns_empty(tmp_path, monkeypatch):
+    api = make_api(tmp_path, monkeypatch)
+    monkeypatch.setattr(api_mod.webview, "active_window",
+                        lambda: type("W", (), {"create_file_dialog": lambda s, **k: None})())
+    assert api.pick_audio() == ""
