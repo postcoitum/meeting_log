@@ -21,7 +21,7 @@ def test_add_meeting_creates_with_transcript_and_summary(tmp_path, monkeypatch):
 def test_update_and_get(tmp_path, monkeypatch):
     api = make_api(tmp_path, monkeypatch)
     m = api.add_meeting("/a/b.m4a")
-    assert api.update_meeting(m["id"], memo_md="내 메모") is True
+    assert api.update_meeting(m["id"], {"memo_md": "내 메모"}) is True
     assert api.get_meeting(m["id"])["memo_md"] == "내 메모"
 
 

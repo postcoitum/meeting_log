@@ -23,7 +23,8 @@ class Api:
     def get_meeting(self, meeting_id: int) -> dict | None:
         return self._store.get_meeting(meeting_id)
 
-    def update_meeting(self, meeting_id: int, **fields) -> bool:
+    def update_meeting(self, meeting_id: int, fields: dict) -> bool:
+        # pywebview passes the JS object as a positional dict, not kwargs.
         self._store.update_fields(meeting_id, **fields)
         return True
 
@@ -54,7 +55,10 @@ class Api:
         return summary
 
     def pick_audio(self) -> str:
-        result = webview.active_window().create_file_dialog(
+        win = webview.active_window()
+        if not win:
+            return ""
+        result = win.create_file_dialog(
             dialog_type=webview.OPEN_DIALOG,
             file_types=("오디오 (*.m4a;*.mp3;*.wav;*.mp4)",),
         )

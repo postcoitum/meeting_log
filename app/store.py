@@ -28,6 +28,9 @@ class Store:
     def __init__(self, db_path: str) -> None:
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
+        # WAL: pywebview runs each API call on its own thread; allow a
+        # transcription write and an edit write to coexist without locking.
+        self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute(_SCHEMA)
         self._conn.commit()
 
