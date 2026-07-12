@@ -1,49 +1,154 @@
 * { box-sizing: border-box; margin: 0; }
+
+:root { --pane-alpha: 0.62; }
+
 body {
   font-family: -apple-system, "Apple SD Gothic Neo", sans-serif;
-  height: 100vh; color: #3c3324;
-  background: linear-gradient(135deg, #d8c7b0, #e7d9c4 55%, #cbb89c);
+  height: 100vh; overflow: hidden; color: #3a3024;
+  background:
+    radial-gradient(60% 50% at 85% 90%, rgba(180,150,200,0.25), transparent 60%),
+    radial-gradient(50% 40% at 70% 15%, rgba(150,180,200,0.22), transparent 60%),
+    radial-gradient(120% 120% at 15% 10%, #e9d8bf 0%, #dcc6a6 38%, #c9b08a 70%, #b89b73 100%);
 }
+
+/* ---------- 상단바 ---------- */
 .topbar {
   display: flex; align-items: center; gap: 12px;
   padding: 10px 16px; -webkit-app-region: drag;
 }
-.topbar button { -webkit-app-region: no-drag; }
-.app-title { font-size: 13px; color: #4a3f30; }
-.progress { margin-left: auto; font-size: 12px; color: #8a6d3b; }
+.topbar button, .topbar input { -webkit-app-region: no-drag; }
+.app-title { font-size: 13px; font-weight: 500; color: #4a3f30; }
+.progress { font-size: 12px; color: #8a6d3b; flex: 1; text-align: center; }
+
+.icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 26px; border-radius: 8px; cursor: pointer;
+  border: 1px solid rgba(255,255,255,0.55); background: rgba(255,255,255,0.5);
+  color: #5a4a36; padding: 0;
+}
+.icon-btn:hover { background: rgba(255,255,255,0.75); }
+.icon-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.icon-btn.sm { width: 24px; height: 22px; }
+.icon-btn.sm svg { width: 13px; height: 13px; }
+
+.rec-btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 5px 12px; border-radius: 10px; cursor: pointer; font-size: 12px;
+  border: 1px solid rgba(255,255,255,0.55); background: rgba(255,255,255,0.5);
+  color: #5a4a36;
+}
+.rec-btn:hover { background: rgba(255,255,255,0.75); }
+.rec-dot { width: 9px; height: 9px; border-radius: 50%; background: #c0392b; }
+.rec-btn.recording { background: rgba(192,57,43,0.14); border-color: rgba(192,57,43,0.4); color: #a93226; }
+.rec-btn.recording .rec-dot { animation: pulse 1.2s infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
+#rec-time { font-variant-numeric: tabular-nums; color: #a93226; }
+
+.opacity-ctl {
+  display: flex; align-items: center; gap: 8px;
+  background: rgba(255,255,255,0.4); border: 1px solid rgba(255,255,255,0.5);
+  padding: 4px 11px; border-radius: 10px;
+}
+.opacity-ctl label { font-size: 11px; color: #5a4a36; }
+.opacity-ctl input { width: 84px; accent-color: #8a6d3b; }
+
+/* ---------- 레이아웃 ---------- */
 .layout {
-  display: grid; grid-template-columns: 200px 1fr 1fr; gap: 12px;
+  display: grid; grid-template-columns: 210px 1fr 1fr; gap: 13px;
   padding: 0 14px 14px; height: calc(100vh - 48px);
 }
-.layout.sidebar-hidden { grid-template-columns: 0 1fr 1fr; }
+/* 사이드바만 접힘 — 요약/우측은 그대로 넓어짐 */
+.layout.sidebar-hidden { grid-template-columns: 1fr 1fr; }
 .layout.sidebar-hidden .sidebar { display: none; }
-.right { display: grid; grid-template-rows: 1fr 1.5fr; gap: 12px; }
-.right.memo-collapsed { grid-template-rows: 40px 1fr; }
+
+.right { display: grid; grid-template-rows: 1fr 1.5fr; gap: 13px; min-height: 0; }
+.right.memo-collapsed { grid-template-rows: 42px 1fr; }
+.right.memo-collapsed .memo .editor { display: none; }
+.right.memo-collapsed #toggle-memo svg { transform: rotate(180deg); }
+
+/* ---------- 글래스 패널 ---------- */
 .pane {
-  background: rgba(255, 252, 246, 0.45);
-  border: 1px solid rgba(255, 255, 255, 0.6);
-  border-radius: 12px; padding: 12px;
-  display: flex; flex-direction: column;
-  backdrop-filter: blur(12px); overflow: hidden;
+  background: rgba(255, 253, 250, var(--pane-alpha));
+  border: 1px solid rgba(255,255,255,0.65);
+  border-top-color: rgba(255,255,255,0.9);
+  border-left-color: rgba(255,255,255,0.8);
+  border-radius: 16px; padding: 13px;
+  display: flex; flex-direction: column; min-height: 0;
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  box-shadow: 0 8px 28px rgba(90,70,45,0.15), inset 0 1px 0 rgba(255,255,255,0.7);
+  overflow: hidden;
 }
 .pane-head {
   display: flex; align-items: center; justify-content: space-between;
-  font-size: 13px; font-weight: 500; color: #4a3f30; margin-bottom: 8px;
+  font-size: 13px; font-weight: 500; color: #4a3f30; margin-bottom: 9px;
 }
-.pane-head button { background: none; border: none; cursor: pointer; font-size: 14px; color: #8a7a64; }
-.list { flex: 1; overflow-y: auto; }
-.date-group { font-size: 11px; color: #9a8a72; margin: 8px 0 4px; }
+.head-btns { display: flex; gap: 5px; }
+
+/* ---------- 사이드바 ---------- */
+.search {
+  border: 1px solid rgba(255,255,255,0.6); border-radius: 9px;
+  background: rgba(255,255,255,0.45); padding: 6px 10px; font-size: 12px;
+  color: #3a3024; outline: none; margin-bottom: 8px;
+}
+.search::placeholder { color: #9a8a72; }
+.list { flex: 1; overflow-y: auto; min-height: 0; }
+.date-group { font-size: 11px; color: #9a8a72; margin: 8px 0 5px; }
 .meeting-item {
-  padding: 7px 9px; border-radius: 8px; font-size: 12px; cursor: pointer;
-  background: rgba(255, 252, 246, 0.4); margin-bottom: 6px; color: #5c5343;
+  padding: 8px 10px; border-radius: 10px; font-size: 12px; cursor: pointer;
+  background: rgba(245,240,232,0.55); margin-bottom: 7px; color: #5c5343;
+  border: 1px solid transparent;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.meeting-item.active { background: rgba(255, 252, 246, 0.85); color: #3c3324; }
+.meeting-item.active {
+  background: rgba(255,253,249,0.92); color: #3a3024;
+  border-color: rgba(200,180,150,0.5); box-shadow: 0 2px 10px rgba(90,70,45,0.1);
+}
 .new-btn {
-  margin-top: 8px; background: rgba(120, 90, 55, 0.85); color: #fff;
-  border: none; border-radius: 8px; padding: 9px; font-size: 12px; cursor: pointer;
+  margin-top: 8px; border-radius: 11px; padding: 9px; font-size: 12px; cursor: pointer;
+  background: linear-gradient(160deg, rgba(135,103,64,0.95), rgba(110,82,50,0.95));
+  color: #fff; border: 1px solid rgba(255,255,255,0.25);
+  box-shadow: 0 4px 14px rgba(90,60,30,0.25);
 }
+
+/* ---------- 에디터 / 스크립트 ---------- */
 .editor {
   flex: 1; resize: none; border: none; background: transparent;
-  font-size: 13px; line-height: 1.7; color: #3c3324; outline: none;
+  font-family: inherit; font-size: 13px; line-height: 1.7; color: #3a3024;
+  outline: none; min-height: 0;
 }
-.script { flex: 1; overflow-y: auto; font-size: 12px; line-height: 1.7; color: #5c5343; white-space: pre-wrap; }
+.script {
+  flex: 1; overflow-y: auto; min-height: 0;
+  font-family: inherit; font-size: 12px; line-height: 1.7; color: #5c5343;
+  white-space: pre-wrap;
+}
+
+/* ---------- 화자 통계 ---------- */
+.stats { display: none; margin-bottom: 10px; }
+.stats.show { display: block; }
+.stat-row { margin-bottom: 7px; }
+.stat-top { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: #4a3f30; }
+.stat-name { font-weight: 500; min-width: 44px; }
+.stat-bar { flex: 1; height: 6px; border-radius: 3px; background: rgba(120,90,55,0.15); overflow: hidden; }
+.stat-fill { height: 100%; border-radius: 3px; }
+.stat-pct { min-width: 32px; text-align: right; color: #8a7a64; font-variant-numeric: tabular-nums; }
+.stat-quote {
+  font-size: 11px; color: #9a8a72; font-style: italic;
+  margin: 3px 0 0 52px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* ---------- 채팅 ---------- */
+.chat { border-top: 1px solid rgba(120,90,55,0.15); padding-top: 8px; margin-top: 8px; }
+.chat-log { max-height: 130px; overflow-y: auto; font-size: 12px; line-height: 1.6; }
+.chat-log:empty { display: none; }
+.chat-msg { margin-bottom: 6px; }
+.chat-msg.q { color: #8a6d3b; font-weight: 500; }
+.chat-msg.a { color: #3a3024; white-space: pre-wrap; }
+.chat-row { display: flex; gap: 6px; margin-top: 6px; }
+.chat-row input {
+  flex: 1; border: 1px solid rgba(255,255,255,0.6); border-radius: 9px;
+  background: rgba(255,255,255,0.45); padding: 6px 10px; font-size: 12px;
+  color: #3a3024; outline: none;
+}
+.chat-row input::placeholder { color: #9a8a72; }
+.chat-row .icon-btn { height: 28px; width: 32px; }
