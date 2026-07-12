@@ -13,12 +13,43 @@ from speaker_utils import (
 DEFAULT_MODEL = "mlx-community/whisper-large-v3-turbo"
 
 
+def _speaker_stats(
+    diar_segs: list[tuple[float, float, str]],
+    named: list[tuple[float, str, str]],
+    name_map: dict[str, str],
+) -> dict:
+    """화자별 점유율(%)과 주요 발언(가장 긴 발언 2개)을 계산."""
+    durations: dict[str, float] = {}
+    for start, end, sid in diar_segs:
+        name = name_map.get(sid, sid)
+        durations[name] = durations.get(name, 0.0) + max(0.0, end - start)
+    total = sum(durations.values()) or 1.0
+
+    quotes: dict[str, list[str]] = {}
+    for _, name, text in named:
+        quotes.setdefault(name, []).append(text.strip())
+    for name in quotes:
+        quotes[name] = [
+            q[:90] for q in sorted(quotes[name], key=len, reverse=True)[:2]
+        ]
+
+    speakers = []
+    for name in sorted(durations):
+        speakers.append({
+            "name": name,
+            "share": round(durations[name] / total * 100),
+            "quotes": quotes.get(name, []),
+        })
+    return {"speakers": speakers}
+
+
 def transcribe_meeting(
     audio_path: str,
     hf_token: str,
     model_repo: str = DEFAULT_MODEL,
     progress: Callable[[str], None] | None = None,
-) -> str:
+) -> tuple[str, dict]:
+    """전사 텍스트와 화자 통계를 함께 반환한다."""
     def report(stage: str) -> None:
         if progress:
             progress(stage)
@@ -36,7 +67,9 @@ def transcribe_meeting(
         name_map = {sid: f"화자 {i + 1}" for i, sid in enumerate(speakers)}
         named = map_speakers(aligned, name_map)
         merged = merge_consecutive(named)
-        return format_transcript(merged, with_timestamps=True)
+        transcript = format_transcript(merged, with_timestamps=True)
+        stats = _speaker_stats(diar_segs, named, name_map)
+        return transcript, stats
     finally:
         if wav != Path(audio_path):
             wav.unlink(missing_ok=True)

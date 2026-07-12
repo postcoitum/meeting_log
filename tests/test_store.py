@@ -44,3 +44,28 @@ def test_update_rejects_unknown_field(tmp_path):
         assert False, "should have raised"
     except ValueError:
         pass
+
+
+def test_migrates_old_db_without_stats_column(tmp_path):
+    import sqlite3
+    db = str(tmp_path / "old.db")
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "CREATE TABLE meetings (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "title TEXT NOT NULL, created_at TEXT NOT NULL, audio_path TEXT NOT NULL, "
+        "transcript TEXT NOT NULL DEFAULT '', summary_md TEXT NOT NULL DEFAULT '', "
+        "memo_md TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL)"
+    )
+    conn.execute(
+        "INSERT INTO meetings (title, created_at, audio_path, updated_at) "
+        "VALUES ('구버전', '2026-06-20T10:00:00', '/a', '2026-06-20T10:00:00')"
+    )
+    conn.commit()
+    conn.close()
+
+    s = Store(db)  # 열기만 해도 stats_json 컬럼이 추가돼야 함
+    got = s.list_meetings()
+    assert got[0]["title"] == "구버전"
+    mid = got[0]["id"]
+    s.update_fields(mid, stats_json='{"speakers": []}')
+    assert s.get_meeting(mid)["stats_json"] == '{"speakers": []}'

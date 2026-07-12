@@ -4,7 +4,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime, timezone
 
-_ALLOWED_UPDATE = {"title", "summary_md", "memo_md", "transcript"}
+_ALLOWED_UPDATE = {"title", "summary_md", "memo_md", "transcript", "stats_json"}
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS meetings (
@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS meetings (
     transcript  TEXT NOT NULL DEFAULT '',
     summary_md  TEXT NOT NULL DEFAULT '',
     memo_md     TEXT NOT NULL DEFAULT '',
+    stats_json  TEXT NOT NULL DEFAULT '',
     updated_at  TEXT NOT NULL
 );
 """
@@ -32,6 +33,13 @@ class Store:
         # transcription write and an edit write to coexist without locking.
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute(_SCHEMA)
+        # 구버전 DB(stats_json 없음) 마이그레이션
+        try:
+            self._conn.execute(
+                "ALTER TABLE meetings ADD COLUMN stats_json TEXT NOT NULL DEFAULT ''"
+            )
+        except sqlite3.OperationalError:
+            pass  # 이미 존재
         self._conn.commit()
 
     def create_meeting(self, title, created_at, audio_path, transcript) -> int:

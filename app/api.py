@@ -1,6 +1,7 @@
 """pywebview JS↔Python 브릿지."""
 from __future__ import annotations
 
+import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
@@ -37,13 +38,17 @@ class Api:
             win = webview.active_window()
             if win:
                 win.evaluate_js(f"window.dispatchEvent(new CustomEvent('progress', {{detail: {stage!r} }}))")
-        transcript = transcribe_meeting(audio_path, self._hf_token, progress=report)
+        transcript, stats = transcribe_meeting(
+            audio_path, self._hf_token, progress=report
+        )
         report("요약 중…")
         summary = summarize(transcript)
         title = Path(audio_path).stem
         created = datetime.now(timezone.utc).isoformat()
         mid = self._store.create_meeting(title, created, audio_path, transcript)
-        self._store.update_fields(mid, summary_md=summary)
+        self._store.update_fields(
+            mid, summary_md=summary, stats_json=json.dumps(stats, ensure_ascii=False)
+        )
         return self._store.get_meeting(mid)
 
     def summarize_meeting(self, meeting_id: int) -> str:

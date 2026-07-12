@@ -2,10 +2,13 @@ import app.api as api_mod
 from app.store import Store
 
 
+FAKE_STATS = {"speakers": [{"name": "화자 1", "share": 100, "quotes": ["안녕"]}]}
+
+
 def make_api(tmp_path, monkeypatch):
     store = Store(str(tmp_path / "t.db"))
     monkeypatch.setattr(api_mod, "transcribe_meeting",
-                        lambda path, token, progress=None: "화자 1: 안녕")
+                        lambda path, token, progress=None: ("화자 1: 안녕", FAKE_STATS))
     monkeypatch.setattr(api_mod, "summarize", lambda text: "## 요약\n- x")
     return api_mod.Api(store=store, hf_token="tok")
 
@@ -16,6 +19,7 @@ def test_add_meeting_creates_with_transcript_and_summary(tmp_path, monkeypatch):
     assert m["transcript"] == "화자 1: 안녕"
     assert m["summary_md"] == "## 요약\n- x"
     assert m["title"] == "audio"
+    assert "화자 1" in m["stats_json"]
 
 
 def test_update_and_get(tmp_path, monkeypatch):
