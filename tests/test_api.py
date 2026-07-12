@@ -76,3 +76,35 @@ def test_pick_audio_cancel_returns_empty(tmp_path, monkeypatch):
     monkeypatch.setattr(api_mod.webview, "active_window",
                         lambda: type("W", (), {"create_file_dialog": lambda s, **k: None})())
     assert api.pick_audio() == ""
+
+
+def test_chat_meeting_uses_transcript(tmp_path, monkeypatch):
+    api = make_api(tmp_path, monkeypatch)
+    m = api.add_meeting("/a/b.m4a")
+    captured = {}
+
+    def fake_chat(transcript, question):
+        captured["t"], captured["q"] = transcript, question
+        return "답변입니다"
+
+    monkeypatch.setattr(api_mod, "chat", fake_chat)
+    out = api.chat_meeting(m["id"], "결정 사항이 뭐야?")
+    assert out == "답변입니다"
+    assert captured["t"] == "화자 1: 안녕"
+    assert captured["q"] == "결정 사항이 뭐야?"
+
+
+def test_export_meeting_writes_markdown(tmp_path, monkeypatch):
+    api = make_api(tmp_path, monkeypatch)
+    m = api.add_meeting("/a/b.m4a")
+    dest = str(tmp_path / "out.md")
+    monkeypatch.setattr(
+        api_mod.webview, "active_window",
+        lambda: type("W", (), {"create_file_dialog": lambda s, **k: dest})(),
+    )
+    path = api.export_meeting(m["id"])
+    assert path == dest
+    content = open(dest, encoding="utf-8").read()
+    assert "# b" in content
+    assert "화자 1: 안녕" in content
+    assert "## 요약" in content

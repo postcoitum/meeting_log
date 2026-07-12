@@ -10,7 +10,7 @@ import webview
 
 from app.store import Store
 from app.transcribe import transcribe_meeting
-from app.summarizer import summarize
+from app.summarizer import summarize, chat
 from app.recorder import Recorder
 
 
@@ -86,6 +86,37 @@ class Api:
         summary = summarize(m["transcript"])
         self._store.update_fields(meeting_id, summary_md=summary)
         return summary
+
+    def chat_meeting(self, meeting_id: int, question: str) -> str:
+        m = self._store.get_meeting(meeting_id)
+        if not m:
+            return ""
+        return chat(m["transcript"], question)
+
+    def export_meeting(self, meeting_id: int) -> str:
+        """회의를 마크다운 파일로 저장하고 경로를 반환 (취소 시 '')."""
+        m = self._store.get_meeting(meeting_id)
+        if not m:
+            return ""
+        win = webview.active_window()
+        if not win:
+            return ""
+        result = win.create_file_dialog(
+            dialog_type=webview.SAVE_DIALOG,
+            save_filename=f"{m['title']}.md",
+        )
+        if not result:
+            return ""
+        path = result if isinstance(result, str) else result[0]
+        content = (
+            f"# {m['title']}\n\n"
+            f"날짜: {m['created_at'][:10]}\n\n"
+            f"## 요약\n\n{m['summary_md'] or '(없음)'}\n\n"
+            f"## 메모\n\n{m['memo_md'] or '(없음)'}\n\n"
+            f"## 전사 스크립트\n\n{m['transcript']}\n"
+        )
+        Path(path).write_text(content, encoding="utf-8")
+        return path
 
     def pick_audio(self) -> str:
         win = webview.active_window()
