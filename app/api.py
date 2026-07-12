@@ -11,12 +11,23 @@ import webview
 from app.store import Store
 from app.transcribe import transcribe_meeting
 from app.summarizer import summarize
+from app.recorder import Recorder
 
 
 class Api:
-    def __init__(self, store: Store, hf_token: str = "") -> None:
+    def __init__(
+        self,
+        store: Store,
+        hf_token: str = "",
+        recorder: Recorder | None = None,
+        recordings_dir: str | None = None,
+    ) -> None:
         self._store = store
         self._hf_token = hf_token or os.environ.get("HF_TOKEN", "")
+        self._recorder = recorder or Recorder()
+        self._recordings_dir = Path(
+            recordings_dir or Path.home() / ".meeting_log" / "recordings"
+        )
 
     def list_meetings(self) -> list[dict]:
         return self._store.list_meetings()
@@ -33,7 +44,7 @@ class Api:
         self._store.delete_meeting(meeting_id)
         return True
 
-    def add_meeting(self, audio_path: str) -> dict:
+    def add_meeting(self, audio_path: str, title: str | None = None) -> dict:
         def report(stage: str) -> None:
             win = webview.active_window()
             if win:
@@ -43,13 +54,30 @@ class Api:
         )
         report("요약 중…")
         summary = summarize(transcript)
-        title = Path(audio_path).stem
         created = datetime.now(timezone.utc).isoformat()
-        mid = self._store.create_meeting(title, created, audio_path, transcript)
+        mid = self._store.create_meeting(
+            title or Path(audio_path).stem, created, audio_path, transcript
+        )
         self._store.update_fields(
             mid, summary_md=summary, stats_json=json.dumps(stats, ensure_ascii=False)
         )
         return self._store.get_meeting(mid)
+
+    # --- 녹음 ---
+
+    def is_recording(self) -> bool:
+        return self._recorder.is_recording
+
+    def start_recording(self) -> bool:
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        out = str(self._recordings_dir / f"rec_{stamp}.wav")
+        self._recorder.start(out)
+        return True
+
+    def stop_recording(self) -> dict:
+        path = self._recorder.stop()
+        title = "녹음 " + datetime.now().strftime("%Y-%m-%d %H:%M")
+        return self.add_meeting(path, title=title)
 
     def summarize_meeting(self, meeting_id: int) -> str:
         m = self._store.get_meeting(meeting_id)

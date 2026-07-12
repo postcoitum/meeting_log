@@ -14,3 +14,5 @@ torchaudio
 # 데스크톱 앱
 pywebview
 mlx-lm
+sounddevice
+soundfile
