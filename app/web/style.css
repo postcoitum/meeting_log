@@ -152,3 +152,29 @@ body {
 }
 .chat-row input::placeholder { color: #9a8a72; }
 .chat-row .icon-btn { height: 28px; width: 32px; }
+
+/* ---------- 요약 양식 모달 ---------- */
+.modal {
+  position: fixed; inset: 0; z-index: 50;
+  background: rgba(60, 45, 25, 0.35);
+  display: flex; align-items: center; justify-content: center;
+}
+.modal.hidden { display: none; }
+.modal-box {
+  width: min(620px, 90vw); height: min(560px, 85vh);
+  background: rgba(255, 253, 250, 0.95);
+}
+.tpl-hint { font-size: 11.5px; color: #8a7a64; line-height: 1.6; margin-bottom: 8px; }
+.tpl-hint code { background: rgba(120,90,55,0.12); border-radius: 4px; padding: 1px 5px; }
+.tpl-editor {
+  border: 1px solid rgba(120,90,55,0.2); border-radius: 10px;
+  background: rgba(255,255,255,0.6); padding: 10px; font-size: 12px;
+}
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+.modal-actions .new-btn { margin-top: 0; padding: 8px 18px; }
+.ghost-btn {
+  border: 1px solid rgba(120,90,55,0.3); background: transparent;
+  border-radius: 11px; padding: 8px 14px; font-size: 12px; cursor: pointer;
+  color: #6a5a44;
+}
+.ghost-btn:hover { background: rgba(255,255,255,0.5); }

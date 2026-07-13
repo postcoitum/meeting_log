@@ -120,6 +120,16 @@
       async export_meeting(id) {
         return "/Users/me/Downloads/meeting.md";
       },
+      async get_summary_template() {
+        return this._tpl || "다음 회의 전사 내용을 읽고 요약하세요. (모의 기본 양식)\n\n{transcript}";
+      },
+      async default_summary_template() {
+        return "다음 회의 전사 내용을 읽고 요약하세요. (모의 기본 양식)\n\n{transcript}";
+      },
+      async set_summary_template(t) {
+        this._tpl = t;
+        return true;
+      },
     },
   };
 

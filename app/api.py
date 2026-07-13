@@ -10,7 +10,7 @@ import webview
 
 from app.store import Store
 from app.transcribe import transcribe_meeting
-from app.summarizer import summarize, chat
+from app.summarizer import summarize, chat, DEFAULT_TEMPLATE
 from app.recorder import Recorder
 
 
@@ -53,7 +53,7 @@ class Api:
             audio_path, self._hf_token, progress=report
         )
         report("요약 중…")
-        summary = summarize(transcript)
+        summary = summarize(transcript, template=self._summary_template())
         created = datetime.now(timezone.utc).isoformat()
         mid = self._store.create_meeting(
             title or Path(audio_path).stem, created, audio_path, transcript
@@ -83,9 +83,29 @@ class Api:
         m = self._store.get_meeting(meeting_id)
         if not m:
             return ""
-        summary = summarize(m["transcript"])
+        summary = summarize(m["transcript"], template=self._summary_template())
         self._store.update_fields(meeting_id, summary_md=summary)
         return summary
+
+    # --- 요약 양식 설정 ---
+
+    def _summary_template(self) -> str | None:
+        """저장된 사용자 양식 (없으면 None → 기본 양식 사용)."""
+        return self._store.get_setting("summary_template", "") or None
+
+    def get_summary_template(self) -> str:
+        return self._summary_template() or DEFAULT_TEMPLATE
+
+    def default_summary_template(self) -> str:
+        return DEFAULT_TEMPLATE
+
+    def set_summary_template(self, template: str) -> bool:
+        """빈 문자열이거나 기본 양식과 같으면 커스텀 설정을 지운다."""
+        t = (template or "").strip()
+        if t == DEFAULT_TEMPLATE.strip():
+            t = ""
+        self._store.set_setting("summary_template", t)
+        return True
 
     def chat_meeting(self, meeting_id: int, question: str) -> str:
         m = self._store.get_meeting(meeting_id)

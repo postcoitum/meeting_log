@@ -69,3 +69,12 @@ def test_migrates_old_db_without_stats_column(tmp_path):
     mid = got[0]["id"]
     s.update_fields(mid, stats_json='{"speakers": []}')
     assert s.get_meeting(mid)["stats_json"] == '{"speakers": []}'
+
+
+def test_settings_get_set(tmp_path):
+    s = Store(str(tmp_path / "t.db"))
+    assert s.get_setting("summary_template", "기본") == "기본"
+    s.set_setting("summary_template", "커스텀 양식")
+    assert s.get_setting("summary_template") == "커스텀 양식"
+    s.set_setting("summary_template", "수정됨")  # upsert
+    assert s.get_setting("summary_template") == "수정됨"

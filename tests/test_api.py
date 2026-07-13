@@ -9,7 +9,8 @@ def make_api(tmp_path, monkeypatch):
     store = Store(str(tmp_path / "t.db"))
     monkeypatch.setattr(api_mod, "transcribe_meeting",
                         lambda path, token, progress=None: ("화자 1: 안녕", FAKE_STATS))
-    monkeypatch.setattr(api_mod, "summarize", lambda text: "## 요약\n- x")
+    monkeypatch.setattr(api_mod, "summarize",
+                        lambda text, template=None: "## 요약\n- x")
     return api_mod.Api(store=store, hf_token="tok")
 
 
@@ -108,3 +109,29 @@ def test_export_meeting_writes_markdown(tmp_path, monkeypatch):
     assert "# b" in content
     assert "화자 1: 안녕" in content
     assert "## 요약" in content
+
+
+def test_summary_template_roundtrip(tmp_path, monkeypatch):
+    api = make_api(tmp_path, monkeypatch)
+    default = api.get_summary_template()
+    assert "{transcript}" in default
+    api.set_summary_template("내 커스텀 양식 {transcript}")
+    assert api.get_summary_template() == "내 커스텀 양식 {transcript}"
+    # 기본값과 동일하게 저장하면 커스텀 해제
+    api.set_summary_template(api.default_summary_template())
+    assert api.get_summary_template() == default
+
+
+def test_regen_uses_custom_template(tmp_path, monkeypatch):
+    api = make_api(tmp_path, monkeypatch)
+    m = api.add_meeting("/a/b.m4a")
+    api.set_summary_template("커스텀! {transcript}")
+    captured = {}
+
+    def fake_summarize(text, template=None):
+        captured["template"] = template
+        return "요약"
+
+    monkeypatch.setattr(api_mod, "summarize", fake_summarize)
+    api.summarize_meeting(m["id"])
+    assert captured["template"] == "커스텀! {transcript}"

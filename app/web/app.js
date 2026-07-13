@@ -294,6 +294,25 @@ function bind() {
     setProgress("");
   };
 
+  // 요약 양식 모달
+  $("settings").onclick = async () => {
+    $("tpl-text").value = await api("get_summary_template");
+    $("tpl-modal").classList.remove("hidden");
+  };
+  $("tpl-close").onclick = () => $("tpl-modal").classList.add("hidden");
+  $("tpl-modal").addEventListener("click", (e) => {
+    if (e.target === $("tpl-modal")) $("tpl-modal").classList.add("hidden");
+  });
+  $("tpl-reset").onclick = async () => {
+    $("tpl-text").value = await api("default_summary_template");
+  };
+  $("tpl-save").onclick = async () => {
+    await api("set_summary_template", $("tpl-text").value);
+    $("tpl-modal").classList.add("hidden");
+    setProgress("요약 양식 저장됨 — 요약 다시 생성(⟳)에 적용됩니다");
+    setTimeout(() => setProgress(""), 3000);
+  };
+
   window.addEventListener("progress", (e) => setProgress(e.detail));
 }
 
