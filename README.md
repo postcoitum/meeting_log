@@ -77,6 +77,22 @@ python3 -m app.main
 **UI 개발 모드**: `python3 -m http.server 8765 --directory app/web` 후
 브라우저에서 `http://localhost:8765/index.html?mock=1` — 가짜 API로 UI만 테스트.
 
+### 더블클릭 앱으로 설치 (터미널 불필요)
+
+```bash
+bash scripts/build_app.sh
+```
+
+`/Applications/회의록.app`이 생성되어 Launchpad·Spotlight·Dock에서 일반 앱처럼
+실행됩니다 (터미널 창 없음). 참고:
+
+- 얇은 래퍼라서 이 Mac의 파이썬 환경을 그대로 사용 — 프로젝트 폴더를 옮기면
+  스크립트만 다시 실행
+- 더블클릭 실행은 터미널 환경변수를 읽지 못하므로, HF 토큰은 앱 안
+  **설정(상단바 오른쪽 끝 버튼)** 에 한 번 입력해 저장
+- 첫 녹음 시 마이크 권한을 한 번 물어봄 (안 뜨면: 시스템 설정 → 개인정보
+  보호 및 보안 → 마이크에서 회의록 허용)
+
 ---
 
 ## 사용법
