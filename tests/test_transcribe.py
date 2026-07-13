@@ -51,3 +51,23 @@ def test_speaker_stats_two_speakers(monkeypatch, tmp_path):
     assert names["화자 1"]["share"] == 75
     assert names["화자 2"]["share"] == 25
     assert "긴 발언" in names["화자 1"]["quotes"][0]
+
+
+def test_num_speakers_1_skips_diarization(monkeypatch, tmp_path):
+    fake_wav = tmp_path / "x.wav"
+    fake_wav.write_bytes(b"")
+    monkeypatch.setattr(t, "to_wav_16k", lambda p: fake_wav)
+    monkeypatch.setattr(
+        t, "transcribe_audio", lambda wav, lang, repo: [(0.0, 5.0, "혼자 말하는 중")]
+    )
+
+    def boom(*a, **k):
+        raise AssertionError("num_speakers=1이면 diarize_audio가 호출되면 안 됨")
+
+    monkeypatch.setattr(t, "diarize_audio", boom)
+
+    out, stats = t.transcribe_meeting("/in.m4a", "tok", num_speakers=1)
+    assert "혼자 말하는 중" in out
+    assert stats["speakers"] == [
+        {"name": "화자 1", "share": 100, "quotes": ["혼자 말하는 중"]}
+    ]

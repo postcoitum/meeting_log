@@ -48,8 +48,14 @@ def transcribe_meeting(
     hf_token: str,
     model_repo: str = DEFAULT_MODEL,
     progress: Callable[[str], None] | None = None,
+    num_speakers: int | None = None,
 ) -> tuple[str, dict]:
-    """전사 텍스트와 화자 통계를 함께 반환한다."""
+    """전사 텍스트와 화자 통계를 함께 반환한다.
+
+    num_speakers=1이면 화자 분리(pyannote)를 통째로 건너뛴다(혼자 녹음 —
+    가장 빠름). 그 외에는 전사(mlx/GPU)와 화자 분리(torch/CPU)를 서로 다른
+    장치에서 돌기 때문에 병렬로 실행해 벽시계 시간을 줄인다.
+    """
     def report(stage: str) -> None:
         if progress:
             progress(stage)
@@ -57,10 +63,21 @@ def transcribe_meeting(
     report("오디오 변환 중…")
     wav = to_wav_16k(Path(audio_path))
     try:
-        report("전사 중…")
-        whisper_segs = transcribe_audio(wav, "ko", model_repo)
-        report("화자 분리 중…")
-        diar_segs = diarize_audio(wav, hf_token)
+        if num_speakers == 1:
+            report("전사 중… (화자 분리 건너뜀)")
+            whisper_segs = transcribe_audio(wav, "ko", model_repo)
+            end = whisper_segs[-1][1] if whisper_segs else 0.0
+            diar_segs = [(0.0, end, "SPEAKER_00")]
+        else:
+            report("전사 · 화자 분리 동시 진행 중…")
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                f_whisper = pool.submit(transcribe_audio, wav, "ko", model_repo)
+                f_diar = pool.submit(
+                    diarize_audio, wav, hf_token, num_speakers=num_speakers
+                )
+                whisper_segs = f_whisper.result()
+                diar_segs = f_diar.result()
 
         aligned = align_segments(whisper_segs, diar_segs)
         speakers = sorted({s for _, s, _ in aligned})

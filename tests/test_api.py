@@ -7,8 +7,10 @@ FAKE_STATS = {"speakers": [{"name": "화자 1", "share": 100, "quotes": ["안녕
 
 def make_api(tmp_path, monkeypatch):
     store = Store(str(tmp_path / "t.db"))
-    monkeypatch.setattr(api_mod, "transcribe_meeting",
-                        lambda path, token, progress=None: ("화자 1: 안녕", FAKE_STATS))
+    monkeypatch.setattr(
+        api_mod, "transcribe_meeting",
+        lambda path, token, progress=None, num_speakers=None: ("화자 1: 안녕", FAKE_STATS),
+    )
     monkeypatch.setattr(api_mod, "summarize",
                         lambda text, template=None: "## 요약\n- x")
     return api_mod.Api(store=store, hf_token="tok")
@@ -148,7 +150,7 @@ def test_add_meeting_prefers_db_token(tmp_path, monkeypatch):
     api = make_api(tmp_path, monkeypatch)
     captured = {}
 
-    def fake_transcribe(path, token, progress=None):
+    def fake_transcribe(path, token, progress=None, num_speakers=None):
         captured["token"] = token
         return ("화자 1: 안녕", FAKE_STATS)
 
@@ -158,3 +160,20 @@ def test_add_meeting_prefers_db_token(tmp_path, monkeypatch):
     api.set_hf_token("hf_db_token")
     api.add_meeting("/a/c.m4a")
     assert captured["token"] == "hf_db_token"  # 설정이 우선
+
+
+def test_num_speakers_setting_passed_to_transcribe(tmp_path, monkeypatch):
+    api = make_api(tmp_path, monkeypatch)
+    captured = {}
+
+    def fake_transcribe(path, token, progress=None, num_speakers=None):
+        captured["n"] = num_speakers
+        return ("화자 1: 안녕", FAKE_STATS)
+
+    monkeypatch.setattr(api_mod, "transcribe_meeting", fake_transcribe)
+    api.add_meeting("/a/a.m4a")
+    assert captured["n"] is None  # 기본: 자동
+    api.set_num_speakers("1")
+    assert api.get_num_speakers() == "1"
+    api.add_meeting("/a/b.m4a")
+    assert captured["n"] == 1

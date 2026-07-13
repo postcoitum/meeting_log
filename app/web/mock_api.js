@@ -133,6 +133,13 @@
       async get_hf_token() {
         return this._token || "";
       },
+      async get_num_speakers() {
+        return this._nspk || "";
+      },
+      async set_num_speakers(v) {
+        this._nspk = v;
+        return true;
+      },
       async set_hf_token(t) {
         this._token = t;
         return true;

@@ -50,7 +50,8 @@ class Api:
             if win:
                 win.evaluate_js(f"window.dispatchEvent(new CustomEvent('progress', {{detail: {stage!r} }}))")
         transcript, stats = transcribe_meeting(
-            audio_path, self._token(), progress=report
+            audio_path, self._token(), progress=report,
+            num_speakers=self._num_speakers(),
         )
         report("요약 중…")
         summary = summarize(transcript, template=self._summary_template())
@@ -86,6 +87,20 @@ class Api:
         summary = summarize(m["transcript"], template=self._summary_template())
         self._store.update_fields(meeting_id, summary_md=summary)
         return summary
+
+    # --- 화자 수 설정 ---
+    # "1"이면 화자 분리를 건너뛰어(pyannote 미실행) 긴 파일에서 크게 빨라진다.
+
+    def _num_speakers(self) -> int | None:
+        v = self._store.get_setting("num_speakers", "")
+        return int(v) if v.isdigit() and int(v) > 0 else None
+
+    def get_num_speakers(self) -> str:
+        return self._store.get_setting("num_speakers", "")
+
+    def set_num_speakers(self, value: str) -> bool:
+        self._store.set_setting("num_speakers", str(value or "").strip())
+        return True
 
     # --- HF 토큰 설정 ---
     # .app으로 실행하면 터미널 환경변수($HF_TOKEN)를 읽지 못하므로,

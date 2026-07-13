@@ -297,6 +297,7 @@ function bind() {
   // 설정 모달 (HF 토큰 + 요약 양식)
   $("settings").onclick = async () => {
     $("hf-token").value = await api("get_hf_token");
+    $("num-speakers").value = await api("get_num_speakers");
     $("tpl-text").value = await api("get_summary_template");
     $("tpl-modal").classList.remove("hidden");
   };
@@ -309,6 +310,7 @@ function bind() {
   };
   $("tpl-save").onclick = async () => {
     await api("set_hf_token", $("hf-token").value);
+    await api("set_num_speakers", $("num-speakers").value);
     await api("set_summary_template", $("tpl-text").value);
     $("tpl-modal").classList.add("hidden");
     setProgress("설정 저장됨");

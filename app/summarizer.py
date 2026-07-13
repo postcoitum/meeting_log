@@ -43,9 +43,20 @@ _PARTIAL_PROMPT = """다음은 긴 회의 전사의 일부입니다. 이 부분�
 """
 
 
+# 모델을 호출마다 다시 로드하지 않도록 캐시 (긴 회의의 조각 요약에서 특히 중요)
+_MODEL_CACHE: dict = {}
+
+
+def _load_model(model: str):
+    if model not in _MODEL_CACHE:
+        from mlx_lm import load
+        _MODEL_CACHE[model] = load(model)
+    return _MODEL_CACHE[model]
+
+
 def _generate(prompt: str, model: str) -> str:
-    from mlx_lm import load, generate
-    mdl, tokenizer = load(model)
+    from mlx_lm import generate
+    mdl, tokenizer = _load_model(model)
     messages = [{"role": "user", "content": prompt}]
     text = tokenizer.apply_chat_template(
         messages, add_generation_prompt=True, tokenize=False
