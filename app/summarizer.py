@@ -67,9 +67,17 @@ def _generate(prompt: str, model: str) -> str:
     # 같은 문장이 무한 반복되는 루프에 잘 빠진다. 약한 temperature/top_p로
     # 매 스텝의 결정론을 깨고, repetition penalty로 최근에 쓴 토큰의 재선택을
     # 억제한다.
-    sampler = make_sampler(temp=0.4, top_p=0.9)
+    #
+    # 주의: penalty=1.3/ctx=200은 반복 루프는 막았지만 이 3B 모델에게는
+    # 지나치게 세서, 정상적으로 재사용해야 할 토큰까지 막아버려 없는 사실을
+    # 지어내고(예: "무드보드"를 "전자기억장치(EEG)"로 창작) 중국어 문자가
+    # 섞여 나오는 심각한 품질 저하를 유발했다(실제 모델로 재현·확인함).
+    # penalty=1.12/ctx=64로 완화한 뒤에는 같은 긴 입력에서 사실관계 왜곡·
+    # 이물 문자 없이 정상 출력되는 것을 재확인했다. 무한 반복 자체는
+    # 아래 _dedupe_repeated_lines()가 최후 안전망으로 계속 막아준다.
+    sampler = make_sampler(temp=0.3, top_p=0.85)
     logits_processors = make_logits_processors(
-        repetition_penalty=1.3, repetition_context_size=200
+        repetition_penalty=1.12, repetition_context_size=64
     )
     out = generate(
         mdl, tokenizer, prompt=text, max_tokens=1024, verbose=False,
