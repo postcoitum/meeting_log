@@ -35,6 +35,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleIconFile</key><string>icon</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSMicrophoneUsageDescription</key><string>회의 녹음을 위해 마이크를 사용합니다.</string>
+  <key>LSArchitecturePriority</key><array><string>arm64</string></array>
+  <key>LSRequiresNativeExecution</key><true/>
 </dict>
 </plist>
 PLIST
@@ -44,7 +46,9 @@ cat > "$APP/Contents/MacOS/MeetingLog" <<LAUNCH
 # 더블클릭 실행은 셸 초기화 파일을 읽지 않으므로 필요한 PATH를 직접 구성한다.
 export PATH="${FFMPEG_DIR:-/opt/homebrew/bin}:/usr/local/bin:\$PATH"
 cd "$PROJECT_DIR"
-exec "$PYTHON_BIN" -m app.main
+# LaunchServices가 스크립트 번들을 Rosetta(x86_64)로 띄우는 경우가 있어
+# 아키텍처를 arm64로 명시 고정한다 (numpy 등 네이티브 확장이 arm64 전용).
+exec arch -arm64 "$PYTHON_BIN" -m app.main
 LAUNCH
 chmod +x "$APP/Contents/MacOS/MeetingLog"
 
