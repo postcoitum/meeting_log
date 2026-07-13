@@ -1,6 +1,5 @@
 # Core transcription (mlx-whisper, Apple-Silicon Metal acceleration)
 mlx-whisper
-tqdm
 
 # Speaker diarization
 pyannote.audio>=3.1.0
