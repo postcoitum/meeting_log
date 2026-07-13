@@ -56,12 +56,41 @@ def _load_model(model: str):
 
 def _generate(prompt: str, model: str) -> str:
     from mlx_lm import generate
+    from mlx_lm.sample_utils import make_sampler, make_logits_processors
+
     mdl, tokenizer = _load_model(model)
     messages = [{"role": "user", "content": prompt}]
     text = tokenizer.apply_chat_template(
         messages, add_generation_prompt=True, tokenize=False
     )
-    return generate(mdl, tokenizer, prompt=text, max_tokens=1024, verbose=False)
+    # 순수 greedy 디코딩(temp=0, 페널티 없음)은 긴 입력·복잡한 형식에서
+    # 같은 문장이 무한 반복되는 루프에 잘 빠진다. 약한 temperature/top_p로
+    # 매 스텝의 결정론을 깨고, repetition penalty로 최근에 쓴 토큰의 재선택을
+    # 억제한다.
+    sampler = make_sampler(temp=0.4, top_p=0.9)
+    logits_processors = make_logits_processors(
+        repetition_penalty=1.3, repetition_context_size=200
+    )
+    out = generate(
+        mdl, tokenizer, prompt=text, max_tokens=1024, verbose=False,
+        sampler=sampler, logits_processors=logits_processors,
+    )
+    return _dedupe_repeated_lines(out)
+
+
+def _dedupe_repeated_lines(text: str) -> str:
+    """반복 억제가 뚫렸을 때의 안전망: 같은 줄이 3번 이상 반복되면 그 지점에서 자른다."""
+    lines = text.split("\n")
+    seen: dict[str, int] = {}
+    out: list[str] = []
+    for line in lines:
+        key = line.strip()
+        if key:
+            seen[key] = seen.get(key, 0) + 1
+            if seen[key] > 2:
+                break
+        out.append(line)
+    return "\n".join(out).rstrip()
 
 
 def _fill(template: str, transcript: str) -> str:

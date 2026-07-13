@@ -66,3 +66,67 @@ def test_long_chat_transcript_is_truncated(monkeypatch):
     s.chat(long_text, "질문?")
     assert "…(중략)…" in prompts[0]
     assert len(prompts[0]) < s.MAX_CHAT_CHARS + 2000
+
+
+def test_dedupe_repeated_lines_cuts_after_third_repeat():
+    text = (
+        "## 결정 사항\n"
+        "- 7월 16일 회의\n"
+        "- 7월 20일 촬영\n"
+        "- 7월 16일 회의\n"
+        "- 7월 20일 촬영\n"
+        "- 7월 16일 회의\n"  # 3번째 반복 -> 여기서 잘림
+        "- 이 뒤는 잘려야 함\n"
+    )
+    out = s._dedupe_repeated_lines(text)
+    assert out.count("- 7월 16일 회의") == 2
+    assert "이 뒤는 잘려야 함" not in out
+
+
+def test_dedupe_keeps_normal_text_untouched():
+    text = "## 한 줄 요약\n\n회의 내용 요약입니다.\n\n## 결정 사항\n\n- 항목1\n- 항목2\n"
+    assert s._dedupe_repeated_lines(text) == text.rstrip()
+
+
+def test_generate_uses_sampler_and_repetition_penalty(monkeypatch):
+    captured = {}
+
+    class FakeSampler:
+        pass
+
+    class FakeProcessors:
+        pass
+
+    def fake_make_sampler(**kwargs):
+        captured["sampler_kwargs"] = kwargs
+        return FakeSampler()
+
+    def fake_make_logits_processors(**kwargs):
+        captured["penalty_kwargs"] = kwargs
+        return FakeProcessors()
+
+    def fake_generate(mdl, tok, prompt, max_tokens, verbose, sampler, logits_processors):
+        captured["sampler"] = sampler
+        captured["logits_processors"] = logits_processors
+        return "결과"
+
+    fake_mlx_lm = type("M", (), {"generate": staticmethod(fake_generate)})
+    fake_sample_utils = type("SU", (), {
+        "make_sampler": staticmethod(fake_make_sampler),
+        "make_logits_processors": staticmethod(fake_make_logits_processors),
+    })
+    monkeypatch.setitem(__import__("sys").modules, "mlx_lm", fake_mlx_lm)
+    monkeypatch.setitem(__import__("sys").modules, "mlx_lm.sample_utils", fake_sample_utils)
+    monkeypatch.setattr(
+        s, "_load_model",
+        lambda model: (object(), type("T", (), {
+            "apply_chat_template": lambda self, messages, add_generation_prompt, tokenize: "프롬프트"
+        })()),
+    )
+
+    out = s._generate("테스트 프롬프트", s.DEFAULT_SUMMARY_MODEL)
+    assert out == "결과"
+    assert isinstance(captured["sampler"], FakeSampler)
+    assert isinstance(captured["logits_processors"], FakeProcessors)
+    assert captured["sampler_kwargs"]["temp"] > 0  # 순수 greedy 아님
+    assert captured["penalty_kwargs"]["repetition_penalty"] > 1.0
