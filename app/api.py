@@ -50,7 +50,7 @@ class Api:
             if win:
                 win.evaluate_js(f"window.dispatchEvent(new CustomEvent('progress', {{detail: {stage!r} }}))")
         transcript, stats = transcribe_meeting(
-            audio_path, self._hf_token, progress=report
+            audio_path, self._token(), progress=report
         )
         report("요약 중…")
         summary = summarize(transcript, template=self._summary_template())
@@ -86,6 +86,20 @@ class Api:
         summary = summarize(m["transcript"], template=self._summary_template())
         self._store.update_fields(meeting_id, summary_md=summary)
         return summary
+
+    # --- HF 토큰 설정 ---
+    # .app으로 실행하면 터미널 환경변수($HF_TOKEN)를 읽지 못하므로,
+    # 앱 설정(DB)에 저장된 토큰을 우선 사용하고 환경변수는 폴백으로 둔다.
+
+    def _token(self) -> str:
+        return self._store.get_setting("hf_token", "") or self._hf_token
+
+    def get_hf_token(self) -> str:
+        return self._store.get_setting("hf_token", "")
+
+    def set_hf_token(self, token: str) -> bool:
+        self._store.set_setting("hf_token", (token or "").strip())
+        return True
 
     # --- 요약 양식 설정 ---
 

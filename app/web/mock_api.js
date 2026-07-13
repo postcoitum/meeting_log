@@ -130,6 +130,13 @@
         this._tpl = t;
         return true;
       },
+      async get_hf_token() {
+        return this._token || "";
+      },
+      async set_hf_token(t) {
+        this._token = t;
+        return true;
+      },
     },
   };
 

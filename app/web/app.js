@@ -294,8 +294,9 @@ function bind() {
     setProgress("");
   };
 
-  // 요약 양식 모달
+  // 설정 모달 (HF 토큰 + 요약 양식)
   $("settings").onclick = async () => {
+    $("hf-token").value = await api("get_hf_token");
     $("tpl-text").value = await api("get_summary_template");
     $("tpl-modal").classList.remove("hidden");
   };
@@ -307,9 +308,10 @@ function bind() {
     $("tpl-text").value = await api("default_summary_template");
   };
   $("tpl-save").onclick = async () => {
+    await api("set_hf_token", $("hf-token").value);
     await api("set_summary_template", $("tpl-text").value);
     $("tpl-modal").classList.add("hidden");
-    setProgress("요약 양식 저장됨 — 요약 다시 생성(⟳)에 적용됩니다");
+    setProgress("설정 저장됨");
     setTimeout(() => setProgress(""), 3000);
   };
 

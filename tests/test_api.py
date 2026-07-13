@@ -135,3 +135,26 @@ def test_regen_uses_custom_template(tmp_path, monkeypatch):
     monkeypatch.setattr(api_mod, "summarize", fake_summarize)
     api.summarize_meeting(m["id"])
     assert captured["template"] == "커스텀! {transcript}"
+
+
+def test_hf_token_setting_roundtrip(tmp_path, monkeypatch):
+    api = make_api(tmp_path, monkeypatch)
+    assert api.get_hf_token() == ""
+    api.set_hf_token("  hf_new_token  ")
+    assert api.get_hf_token() == "hf_new_token"
+
+
+def test_add_meeting_prefers_db_token(tmp_path, monkeypatch):
+    api = make_api(tmp_path, monkeypatch)
+    captured = {}
+
+    def fake_transcribe(path, token, progress=None):
+        captured["token"] = token
+        return ("화자 1: 안녕", FAKE_STATS)
+
+    monkeypatch.setattr(api_mod, "transcribe_meeting", fake_transcribe)
+    api.add_meeting("/a/b.m4a")
+    assert captured["token"] == "tok"  # 설정 없음 → 생성자(환경변수) 폴백
+    api.set_hf_token("hf_db_token")
+    api.add_meeting("/a/c.m4a")
+    assert captured["token"] == "hf_db_token"  # 설정이 우선

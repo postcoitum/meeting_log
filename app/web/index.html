@@ -27,11 +27,14 @@
   <div id="tpl-modal" class="modal hidden">
     <div class="modal-box pane">
       <div class="pane-head">
-        <span>회의 요약 양식</span>
+        <span>설정</span>
         <button id="tpl-close" class="icon-btn sm" aria-label="닫기">
           <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
         </button>
       </div>
+      <label class="tpl-label" for="hf-token">HuggingFace 토큰 <span class="tpl-sub">화자 분리 모델용 — 한 번만 입력하면 저장됩니다</span></label>
+      <input id="hf-token" type="password" class="search" placeholder="hf_…" spellcheck="false" autocomplete="off">
+      <label class="tpl-label" for="tpl-text">회의 요약 양식</label>
       <p class="tpl-hint">요약을 만들 때 로컬 AI에게 주는 지시문입니다. <code>{transcript}</code> 자리에 전사 내용이 들어갑니다. 저장 후 요약 다시 생성(⟳)을 누르면 적용됩니다.</p>
       <textarea id="tpl-text" class="editor tpl-editor" spellcheck="false"></textarea>
       <div class="modal-actions">
