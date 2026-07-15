@@ -71,3 +71,20 @@ def test_num_speakers_1_skips_diarization(monkeypatch, tmp_path):
     assert stats["speakers"] == [
         {"name": "화자 1", "share": 100, "quotes": ["혼자 말하는 중"]}
     ]
+
+
+def test_eta_and_timings(monkeypatch, tmp_path):
+    fake_wav = tmp_path / "x.wav"
+    fake_wav.write_bytes(b"")
+    monkeypatch.setattr(t, "to_wav_16k", lambda p: fake_wav)
+    monkeypatch.setattr(t, "_audio_duration", lambda p: 600.0)  # 10분짜리 오디오인 척
+    monkeypatch.setattr(t, "transcribe_audio", lambda wav, lang, repo: [(0.0, 1.0, "안녕")])
+    monkeypatch.setattr(
+        t, "diarize_audio",
+        lambda wav, token, num_speakers=None, max_speakers=None: [(0.0, 1.0, "SPEAKER_00")],
+    )
+    stages, timings = [], {}
+    t.transcribe_meeting("/in.m4a", "tok", progress=stages.append, timings_out=timings)
+    assert any("예상" in s for s in stages)
+    assert timings["audio_sec"] == 600.0
+    assert "transcribe_sec" in timings and "diarize_sec" in timings

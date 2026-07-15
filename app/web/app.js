@@ -11,7 +11,33 @@ async function api(name, ...args) {
 
 function $(id) { return document.getElementById(id); }
 
-function setProgress(text) { $("progress").textContent = text; }
+let progressStage = "";
+let progressStart = null;
+let progressTicker = null;
+
+function renderProgress() {
+  const sec = Math.floor((Date.now() - progressStart) / 1000);
+  const mm = String(Math.floor(sec / 60)).padStart(2, "0");
+  const ss = String(sec % 60).padStart(2, "0");
+  $("progress").textContent = `${progressStage} · 경과 ${mm}:${ss}`;
+}
+
+function setProgress(text) {
+  if (!text) {
+    progressStage = "";
+    progressStart = null;
+    clearInterval(progressTicker);
+    progressTicker = null;
+    $("progress").textContent = "";
+    return;
+  }
+  progressStage = text;
+  if (!progressStart) {
+    progressStart = Date.now();
+    progressTicker = setInterval(renderProgress, 1000);
+  }
+  renderProgress();
+}
 
 /* ---------- 목록 ---------- */
 

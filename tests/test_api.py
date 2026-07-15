@@ -9,7 +9,7 @@ def make_api(tmp_path, monkeypatch):
     store = Store(str(tmp_path / "t.db"))
     monkeypatch.setattr(
         api_mod, "transcribe_meeting",
-        lambda path, token, progress=None, num_speakers=None: ("화자 1: 안녕", FAKE_STATS),
+        lambda path, token, progress=None, num_speakers=None, rates=None, timings_out=None: ("화자 1: 안녕", FAKE_STATS),
     )
     monkeypatch.setattr(api_mod, "summarize",
                         lambda text, template=None: "## 요약\n- x")
@@ -150,7 +150,7 @@ def test_add_meeting_prefers_db_token(tmp_path, monkeypatch):
     api = make_api(tmp_path, monkeypatch)
     captured = {}
 
-    def fake_transcribe(path, token, progress=None, num_speakers=None):
+    def fake_transcribe(path, token, progress=None, num_speakers=None, rates=None, timings_out=None):
         captured["token"] = token
         return ("화자 1: 안녕", FAKE_STATS)
 
@@ -166,7 +166,7 @@ def test_num_speakers_setting_passed_to_transcribe(tmp_path, monkeypatch):
     api = make_api(tmp_path, monkeypatch)
     captured = {}
 
-    def fake_transcribe(path, token, progress=None, num_speakers=None):
+    def fake_transcribe(path, token, progress=None, num_speakers=None, rates=None, timings_out=None):
         captured["n"] = num_speakers
         return ("화자 1: 안녕", FAKE_STATS)
 
@@ -177,3 +177,26 @@ def test_num_speakers_setting_passed_to_transcribe(tmp_path, monkeypatch):
     assert api.get_num_speakers() == "1"
     api.add_meeting("/a/b.m4a")
     assert captured["n"] == 1
+
+
+def test_rates_learned_after_add(tmp_path, monkeypatch):
+    api = make_api(tmp_path, monkeypatch)
+
+    def fake_transcribe(path, token, progress=None, num_speakers=None, rates=None, timings_out=None):
+        if timings_out is not None:
+            timings_out.update({"audio_sec": 100.0, "transcribe_sec": 6.0, "diarize_sec": 50.0})
+        return ("화자 1: 안녕", FAKE_STATS)
+
+    import time as time_module
+    def fake_summarize(text, template=None):
+        time_module.sleep(0.001)
+        return "## 요약\n- x"
+
+    monkeypatch.setattr(api_mod, "transcribe_meeting", fake_transcribe)
+    monkeypatch.setattr(api_mod, "summarize", fake_summarize)
+    api.add_meeting("/a/b.m4a")
+    import json as _json
+    rates = _json.loads(api._store.get_setting("stage_rates"))
+    assert abs(rates["transcribe"] - 0.06) < 1e-6
+    assert abs(rates["diarize"] - 0.5) < 1e-6
+    assert rates["summary_chunk_sec"] > 0

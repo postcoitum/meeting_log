@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -10,7 +12,7 @@ import webview
 
 from app.store import Store
 from app.transcribe import transcribe_meeting
-from app.summarizer import summarize, chat, DEFAULT_TEMPLATE
+from app.summarizer import summarize, chat, DEFAULT_TEMPLATE, MAX_INPUT_CHARS
 from app.recorder import Recorder
 
 
@@ -49,12 +51,19 @@ class Api:
             win = webview.active_window()
             if win:
                 win.evaluate_js(f"window.dispatchEvent(new CustomEvent('progress', {{detail: {stage!r} }}))")
+        timings: dict = {}
         transcript, stats = transcribe_meeting(
             audio_path, self._token(), progress=report,
             num_speakers=self._num_speakers(),
+            rates=self._rates(), timings_out=timings,
         )
-        report("요약 중…")
+        n_chunks = max(1, -(-len(transcript) // MAX_INPUT_CHARS))  # ceil
+        chunk_rate = self._rates().get("summary_chunk_sec")
+        eta = f" (예상 약 {max(1, round(n_chunks * chunk_rate / 60))}분)" if chunk_rate else ""
+        report(f"요약 중…{eta}")
+        t0 = time.monotonic()
         summary = summarize(transcript, template=self._summary_template())
+        self._save_rates(timings, time.monotonic() - t0, n_chunks)
         created = datetime.now(timezone.utc).isoformat()
         mid = self._store.create_meeting(
             title or Path(audio_path).stem, created, audio_path, transcript
@@ -87,6 +96,34 @@ class Api:
         summary = summarize(m["transcript"], template=self._summary_template())
         self._store.update_fields(meeting_id, summary_md=summary)
         return summary
+
+    # --- 단계별 처리율 (소요시간 예측용, 실행마다 실측·학습) ---
+
+    def _rates(self) -> dict:
+        raw = self._store.get_setting("stage_rates", "")
+        try:
+            return json.loads(raw) if raw else {}
+        except ValueError:
+            return {}
+
+    def _save_rates(self, timings: dict, summary_sec: float, n_chunks: int) -> None:
+        """실측치를 지수이동평균(0.5)으로 반영. audio_sec 없으면 저장 안 함."""
+        audio = timings.get("audio_sec") or 0
+        if audio <= 0:
+            return
+        rates = self._rates()
+
+        def blend(key: str, new: float) -> None:
+            old = rates.get(key)
+            rates[key] = round(new if old is None else old * 0.5 + new * 0.5, 4)
+
+        if timings.get("transcribe_sec"):
+            blend("transcribe", timings["transcribe_sec"] / audio)
+        if timings.get("diarize_sec"):
+            blend("diarize", timings["diarize_sec"] / audio)
+        if summary_sec > 0 and n_chunks > 0:
+            blend("summary_chunk_sec", summary_sec / n_chunks)
+        self._store.set_setting("stage_rates", json.dumps(rates))
 
     # --- 화자 수 설정 ---
     # "1"이면 화자 분리를 건너뛰어(pyannote 미실행) 긴 파일에서 크게 빨라진다.
@@ -142,6 +179,16 @@ class Api:
             return ""
         return chat(m["transcript"], question)
 
+    @staticmethod
+    def _meeting_markdown(m: dict) -> str:
+        return (
+            f"# {m['title']}\n\n"
+            f"날짜: {m['created_at'][:10]}\n\n"
+            f"## 요약\n\n{m['summary_md'] or '(없음)'}\n\n"
+            f"## 메모\n\n{m['memo_md'] or '(없음)'}\n\n"
+            f"## 전사 스크립트\n\n{m['transcript']}\n"
+        )
+
     def export_meeting(self, meeting_id: int) -> str:
         """회의를 마크다운 파일로 저장하고 경로를 반환 (취소 시 '')."""
         m = self._store.get_meeting(meeting_id)
@@ -157,15 +204,17 @@ class Api:
         if not result:
             return ""
         path = result if isinstance(result, str) else result[0]
-        content = (
-            f"# {m['title']}\n\n"
-            f"날짜: {m['created_at'][:10]}\n\n"
-            f"## 요약\n\n{m['summary_md'] or '(없음)'}\n\n"
-            f"## 메모\n\n{m['memo_md'] or '(없음)'}\n\n"
-            f"## 전사 스크립트\n\n{m['transcript']}\n"
-        )
+        content = self._meeting_markdown(m)
         Path(path).write_text(content, encoding="utf-8")
         return path
+
+    def copy_for_notion(self, meeting_id: int) -> bool:
+        """회의록 마크다운을 클립보드에 복사 — 노션에 그대로 붙여넣으면 서식 변환됨."""
+        m = self._store.get_meeting(meeting_id)
+        if not m:
+            return False
+        subprocess.run(["pbcopy"], input=self._meeting_markdown(m).encode("utf-8"), check=True)
+        return True
 
     def pick_audio(self) -> str:
         win = webview.active_window()
