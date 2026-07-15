@@ -113,6 +113,28 @@ def test_export_meeting_writes_markdown(tmp_path, monkeypatch):
     assert "## 요약" in content
 
 
+def test_copy_for_notion_pipes_markdown_to_pbcopy(tmp_path, monkeypatch):
+    api = make_api(tmp_path, monkeypatch)
+    m = api.add_meeting("/a/b.m4a")
+    captured = {}
+
+    def fake_run(cmd, input=None, check=False):
+        captured["cmd"], captured["input"] = cmd, input
+        return None
+
+    monkeypatch.setattr(api_mod.subprocess, "run", fake_run)
+    assert api.copy_for_notion(m["id"]) is True
+    assert captured["cmd"] == ["pbcopy"]
+    text = captured["input"].decode("utf-8")
+    assert text.startswith("# b")
+    assert "## 요약" in text and "화자 1: 안녕" in text
+
+
+def test_copy_for_notion_missing_meeting(tmp_path, monkeypatch):
+    api = make_api(tmp_path, monkeypatch)
+    assert api.copy_for_notion(9999) is False
+
+
 def test_summary_template_roundtrip(tmp_path, monkeypatch):
     api = make_api(tmp_path, monkeypatch)
     default = api.get_summary_template()

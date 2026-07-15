@@ -289,6 +289,15 @@ function bind() {
     }
   };
 
+  $("copy-notion").onclick = async () => {
+    if (!currentId) return;
+    const ok = await api("copy_for_notion", currentId);
+    if (ok) {
+      setProgress("복사됨 — 노션에 붙여넣기(⌘V)만 하면 됩니다");
+      setTimeout(() => setProgress(""), 3000);
+    }
+  };
+
   $("record").onclick = toggleRecord;
 
   $("chat-send").onclick = sendChat;
