@@ -30,5 +30,9 @@
 ## 5. 마지막 세션 기록 (Resume pointer)
 <!-- 다음 세션이 "이어서" 시작할 수 있게 하는 부분. -->
 - 날짜: 2026-07-17
-- 이번에 한 것: 흩어진 폴더 정리. 홈의 옛 프로토타입 `~/meeting_log_new`(6월 flat 스크립트, 모든 파일이 이 프로젝트에 더 발전된 버전으로 존재함을 검증)와 빈 폴더 `~/"meeting log"`를 영구 삭제. 본 프로젝트 내부 잡파일(.DS_Store, __pycache__, .pytest_cache, voice1_transcript.txt) 제거, `.gitignore`에 `.pytest_cache/` 추가. STATE.md/CLAUDE.md 신설. `~/.meeting_log`(실데이터)와 git 히스토리는 손대지 않음.
-- 다음에 할 것: 이 프로젝트(`~/Desktop/go/meeting_log`)에서 개발 이어가기. `.gitignore` 변경분 커밋 여부는 포코 결정.
+- 이번에 한 것:
+  1. 흩어진 폴더 정리. 홈의 옛 프로토타입 `~/meeting_log_new`(6월 flat 스크립트, 모든 파일이 이 프로젝트에 더 발전된 버전으로 존재함을 검증)와 빈 폴더 `~/"meeting log"`를 영구 삭제. 본 프로젝트 내부 잡파일(.DS_Store, __pycache__, .pytest_cache, voice1_transcript.txt) 제거, `.gitignore`에 `.pytest_cache/` 추가. `~/.meeting_log`(실데이터)와 git 히스토리는 손대지 않음.
+  2. STATE.md/CLAUDE.md 신설 (기존 CLAUDE.md가 프로젝트·전역 어디에도 없어서 새로 만듦 — "덧붙이기"가 아닌 "신설"이었음을 포코에게 명시적으로 알림).
+  3. CLAUDE.md를 최소 추가지침본에서 확장: 프로젝트 개요, 핵심 사실(진짜 경로/데이터 폴더/형제 의존성), 구조·실행·테스트 명령(README 기준 검증), 포코 작업 스타일(한국어 소통·비용 의식적 모델 선택·깔끔한 정리 선호·정직한 보고 요구) 추가.
+  4. 브랜치 `chore/project-cleanup-state-md`로 커밋 2건 푸시 후 PR #1 오픈 (https://github.com/postcoitum/meeting_log/pull/1). 소스/동작 변경 없음, 문서+ignore만.
+- 다음에 할 것: PR #1 머지 여부는 포코 결정. 머지 후 로컬을 `main`으로 돌아와 브랜치 정리(삭제) 필요.
