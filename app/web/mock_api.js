@@ -20,6 +20,7 @@
       memo_md: "",
       duration_sec: 1830,
       status: "done",
+      folder_id: 1,
       stats_json: JSON.stringify({
         speakers: [
           { name: "화자 1", share: 72, quotes: ["일단 새 캠페인 예산부터 얘기해볼게요. 4분기 목표가 꽤 공격적이라서요"] },
@@ -37,6 +38,7 @@
       memo_md: "다음 회의 전에 다이어그램 준비",
       duration_sec: 240,
       status: "done",
+      folder_id: null,
       stats_json: JSON.stringify({
         speakers: [{ name: "화자 1", share: 100, quotes: ["모듈 분리 구조를 다시 봅시다"] }],
       }),
@@ -51,9 +53,12 @@
       memo_md: "",
       duration_sec: 0,
       status: "done",
+      folder_id: null,
       stats_json: "",
     },
   ];
+  const folders = [{ id: 1, name: "마케팅", created_at: iso(daysAgo(5)) }];
+  let nextFolderId = 2;
   let nextId = 4;
   let recording = false;
   const delay = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -65,6 +70,7 @@
           .map((m) => ({
             id: m.id, title: m.title, created_at: m.created_at,
             duration_sec: m.duration_sec || 0, status: m.status || "done",
+            folder_id: m.folder_id ?? null,
           }))
           .sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id - a.id);
       },
@@ -98,6 +104,7 @@
           memo_md: "",
           duration_sec: 0,
           status: "queued",
+          folder_id: null,
           stats_json: "",
         };
         meetings.push(m);
@@ -183,6 +190,32 @@
       },
       async set_hf_token(t) {
         this._token = t;
+        return true;
+      },
+      async list_folders() {
+        return [...folders].sort((a, b) => a.name.localeCompare(b.name, "ko"));
+      },
+      async create_folder(name) {
+        name = (name || "").trim();
+        if (!name) throw new Error("폴더 이름이 비어 있습니다");
+        if (folders.some((f) => f.name === name)) throw new Error("이미 있는 폴더 이름입니다");
+        const f = { id: nextFolderId++, name, created_at: iso(new Date()) };
+        folders.push(f);
+        return { id: f.id, name: f.name };
+      },
+      async rename_folder(id, name) {
+        name = (name || "").trim();
+        if (!name) throw new Error("폴더 이름이 비어 있습니다");
+        if (folders.some((f) => f.name === name && f.id !== id)) throw new Error("이미 있는 폴더 이름입니다");
+        const f = folders.find((x) => x.id === id);
+        if (f) f.name = name;
+        return true;
+      },
+      async delete_folder(id, deleteAudio) {
+        for (let i = meetings.length - 1; i >= 0; i--)
+          if (meetings[i].folder_id === id) meetings.splice(i, 1);
+        const i = folders.findIndex((f) => f.id === id);
+        if (i >= 0) folders.splice(i, 1);
         return true;
       },
     },

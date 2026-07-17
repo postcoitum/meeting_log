@@ -2,6 +2,16 @@ let currentId = null;
 let meetingsCache = [];
 let recTimerId = null;
 let recStartedAt = null;
+let foldersCache = [];
+let selectedFolderId = loadSelectedFolder();
+
+function loadSelectedFolder() {
+  const raw = localStorage.getItem("selectedFolder");
+  if (raw === null || raw === "all") return "all";
+  if (raw === "unfiled") return "unfiled";
+  const n = Number(raw);
+  return Number.isInteger(n) ? n : "all";
+}
 
 const BAR_COLORS = ["#5b8ac4", "#3f9e7a", "#c46a8a", "#b08a3f", "#7a6ac4"];
 
@@ -39,6 +49,146 @@ function setProgress(text) {
   renderProgress();
 }
 
+/* ---------- 폴더 ---------- */
+
+async function refreshFolders() {
+  foldersCache = await api("list_folders");
+  // 선택돼 있던 폴더가 삭제됐으면 전체로 복귀
+  if (typeof selectedFolderId === "number" &&
+      !foldersCache.some((f) => f.id === selectedFolderId)) {
+    selectedFolderId = "all";
+    localStorage.setItem("selectedFolder", "all");
+  }
+  renderFolders();
+}
+
+function selectFolder(v) {
+  selectedFolderId = v;
+  localStorage.setItem("selectedFolder", String(v));
+  renderFolders();
+  renderList();
+}
+
+function folderCount(fid) {
+  if (fid === "all") return meetingsCache.length;
+  if (fid === "unfiled") return meetingsCache.filter((m) => m.folder_id == null).length;
+  return meetingsCache.filter((m) => m.folder_id === fid).length;
+}
+
+function makeFolderRow(key, label, opts) {
+  // opts: { droppable, dropFolderId, folder(실제 폴더 객체 or null) }
+  const row = document.createElement("div");
+  row.className = "folder-row" + (selectedFolderId === key ? " active" : "");
+  const name = document.createElement("span");
+  name.className = "folder-name";
+  name.textContent = label;
+  row.appendChild(name);
+  if (opts.folder) {
+    const actions = document.createElement("span");
+    actions.className = "folder-actions";
+    const ren = document.createElement("button");
+    ren.className = "folder-act";
+    ren.textContent = "✎";
+    ren.title = "폴더 이름 변경";
+    ren.onclick = (e) => { e.stopPropagation(); renameFolderUI(opts.folder); };
+    const del = document.createElement("button");
+    del.className = "folder-act";
+    del.textContent = "×";
+    del.title = "폴더 삭제";
+    del.onclick = (e) => { e.stopPropagation(); deleteFolderUI(opts.folder); };
+    actions.append(ren, del);
+    row.appendChild(actions);
+  }
+  const cnt = document.createElement("span");
+  cnt.className = "folder-count";
+  cnt.textContent = folderCount(key);
+  row.appendChild(cnt);
+  row.onclick = () => selectFolder(key);
+  if (opts.droppable) {
+    row.addEventListener("dragover", (e) => { e.preventDefault(); row.classList.add("drag-over"); });
+    row.addEventListener("dragleave", () => row.classList.remove("drag-over"));
+    row.addEventListener("drop", async (e) => {
+      e.preventDefault();
+      row.classList.remove("drag-over");
+      const mid = Number(e.dataTransfer.getData("text/plain"));
+      if (!mid) return;
+      await api("update_meeting", mid, { folder_id: opts.dropFolderId });
+      await refreshList();
+    });
+  }
+  return row;
+}
+
+function renderFolders() {
+  const el = $("folder-list");
+  if (!el) return;
+  el.innerHTML = "";
+  el.appendChild(makeFolderRow("all", "전체", { droppable: false, folder: null }));
+  el.appendChild(makeFolderRow("unfiled", "미분류", { droppable: true, dropFolderId: null, folder: null }));
+  for (const f of foldersCache)
+    el.appendChild(makeFolderRow(f.id, f.name, { droppable: true, dropFolderId: f.id, folder: f }));
+}
+
+async function renameFolderUI(f) {
+  const name = prompt("폴더 이름", f.name);
+  if (!name || !name.trim() || name.trim() === f.name) return;
+  try {
+    await api("rename_folder", f.id, name.trim());
+  } catch (e) { alert("이름 변경 실패: " + e); }
+  await refreshFolders();
+}
+
+async function deleteFolderUI(f) {
+  const n = folderCount(f.id);
+  if (!confirm(`"${f.name}" 폴더를 삭제할까요?\n폴더 안의 회의 ${n}개도 함께 삭제됩니다.`)) return;
+  const deleteAudio = n > 0 && confirm("폴더 안 회의들의 오디오 파일도 함께 삭제할까요?");
+  await api("delete_folder", f.id, deleteAudio);
+  if (currentId !== null && !(await api("get_meeting", currentId))) {
+    // 열려 있던 회의가 폴더와 함께 지워짐 — delete-meeting 핸들러와 동일한 초기화
+    currentId = null;
+    setSummaryEditMode(false);
+    setSummaryView("");
+    $("memo").value = "";
+    $("transcript").textContent = "";
+    renderStats("");
+    $("chat-log").innerHTML = "";
+  }
+  await refreshFolders();
+  await refreshList();
+}
+
+let openMoveMenu = null;
+
+function closeMoveMenu() {
+  if (openMoveMenu) { openMoveMenu.remove(); openMoveMenu = null; }
+}
+
+function showMoveMenu(meetingId, anchorEl) {
+  closeMoveMenu();
+  const menu = document.createElement("div");
+  menu.className = "move-menu pane";
+  const m = meetingsCache.find((x) => x.id === meetingId);
+  const options = [{ id: null, name: "미분류" }, ...foldersCache];
+  for (const opt of options) {
+    const item = document.createElement("div");
+    item.className = "move-menu-item" + (m && m.folder_id === opt.id ? " current" : "");
+    item.textContent = opt.name;
+    item.onclick = async (e) => {
+      e.stopPropagation();
+      closeMoveMenu();
+      await api("update_meeting", meetingId, { folder_id: opt.id });
+      await refreshList();
+    };
+    menu.appendChild(item);
+  }
+  document.body.appendChild(menu);
+  const r = anchorEl.getBoundingClientRect();
+  menu.style.top = Math.min(r.bottom + 2, window.innerHeight - menu.offsetHeight - 8) + "px";
+  menu.style.left = r.left + "px";
+  openMoveMenu = menu;
+  setTimeout(() => document.addEventListener("click", closeMoveMenu, { once: true }), 0);
+}
+
 /* ---------- 목록 ---------- */
 
 function groupByDate(meetings) {
@@ -53,6 +203,7 @@ function groupByDate(meetings) {
 async function refreshList() {
   meetingsCache = await api("list_meetings");
   renderList();
+  renderFolders();
 }
 
 const STATUS_LABEL = { queued: "대기중", processing: "처리중…", error: "실패" };
@@ -89,6 +240,17 @@ function renderItem(el, m) {
     meta.textContent = fmtTime(Math.round(m.duration_sec));
   }
   d.appendChild(meta);
+  const mv = document.createElement("button");
+  mv.className = "folder-act meeting-move";
+  mv.textContent = "📁";
+  mv.title = "폴더로 이동";
+  mv.onclick = (e) => { e.stopPropagation(); showMoveMenu(m.id, mv); };
+  d.appendChild(mv);
+  d.draggable = true;
+  d.addEventListener("dragstart", (e) => {
+    e.dataTransfer.setData("text/plain", String(m.id));
+    e.dataTransfer.effectAllowed = "move";
+  });
   d.title = m.title;
   d.onclick = () => openMeeting(m.id);
   el.appendChild(d);
@@ -97,9 +259,13 @@ function renderItem(el, m) {
 function renderList() {
   const q = $("search").value.trim().toLowerCase();
   const sortMode = $("sort-select") ? $("sort-select").value : "date_desc";
-  let filtered = q
-    ? meetingsCache.filter((m) => m.title.toLowerCase().includes(q))
-    : meetingsCache;
+  let filtered = meetingsCache;
+  if (selectedFolderId === "unfiled") {
+    filtered = filtered.filter((m) => m.folder_id == null);
+  } else if (selectedFolderId !== "all") {
+    filtered = filtered.filter((m) => m.folder_id === selectedFolderId);
+  }
+  if (q) filtered = filtered.filter((m) => m.title.toLowerCase().includes(q));
   filtered = sortMeetings(filtered, sortMode);
   const el = $("meeting-list");
   el.innerHTML = "";
@@ -412,6 +578,14 @@ function bind() {
     }
   };
 
+  $("new-folder").onclick = async () => {
+    const name = prompt("새 폴더 이름");
+    if (!name || !name.trim()) return;
+    try { await api("create_folder", name.trim()); }
+    catch (e) { alert("폴더 생성 실패: " + e); }
+    await refreshFolders();
+  };
+
   // 설정 모달 (HF 토큰 + 요약 양식)
   $("settings").onclick = async () => {
     $("hf-token").value = await api("get_hf_token");
@@ -451,6 +625,7 @@ function bind() {
 
 window.addEventListener("pywebviewready", async () => {
   bind();
+  await refreshFolders();
   await refreshList();
   // 앱 재시작 시 녹음이 이어지고 있으면 UI 복원
   if (await api("is_recording")) startRecUI();
