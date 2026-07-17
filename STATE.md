@@ -29,9 +29,9 @@
   - 메타 문장 필터 `_strip_meta_sentences()` 추가("이러한 내용을 요약하면…" 류 꼬리 문장 정규식 제거).
   - **실DB id=7(20,559자 전사)로 직접 실행 검증**: 696자/68.3초. 전반부(빈티지 반바지·신발 가격 문제)와 후반부(플리마켓·참가비 부담)가 모두 요약에 반영됨. 플리마켓 참가비는 "논의 필요 사항"(미결정)으로 정확히 분류돼 왜곡 스팟체크 통과(우리의 결정으로 둔갑하지 않음). 메타 문장 없음.
   - **가져온 오디오 복사 구현**(Part B): `app/api.py`에 `Api._ensure_in_recordings_dir()` 추가. `add_meeting()`에서 파일이 이미 `recordings_dir` 안이 아니면 `imported_{stamp}_{원본이름}`으로 복사(`shutil.copy2`), 복사 실패 시 원본 경로 폴백(앱 안 죽음). 이미 recordings_dir 안의 파일(녹음 기능 산출물)은 복사 생략.
-  - `delete_meeting()`은 DB row만 지우고 오디오 파일은 지우지 않음을 확인(`app/store.py` 116-119번 줄) — **recordings_dir 안 파일 동반 삭제 여부는 구현하지 않음, 포코 결정 대기.**
   - `?mock=1` 브라우저 하니스로 UI 회귀 없음 확인(카드 뷰 렌더링·체크박스·화자 비율·스크립트 원본 모두 정상).
   - `python3 -m pytest` 49개 전부 통과(기존 44 + summarizer 신규 3개 + api 신규 2개). (2026-07-17 5차 세션)
+- **회의 삭제 시 오디오 파일도 지울지 매번 물어보게 구현 완료** (6차 세션, `~/.claude/plans/attach-polymorphic-chipmunk.md` 실행). `Api.delete_meeting(meeting_id, delete_audio=False)`로 시그니처 변경, `Api._path_in_recordings_dir()`로 안전 체크(recordings_dir 바깥 경로는 절대 안 지움 — 옛 DB row의 스테일 경로 보호). 프론트(`app/web/app.js`)는 삭제 확인 후 "오디오 파일도 함께 삭제할까요?" 두 번째 `confirm()`을 항상 띄워 값을 넘김. `?mock=1` 하니스로 두 확인창을 거쳐 목록에서 정상 삭제되는 것을 스크린샷으로 확인. 테스트 3개 추가(recordings_dir 안/기본값/바깥 경로 케이스), `python3 -m pytest` 52개 전부 통과. (2026-07-17 6차 세션)
 - **요약 새로고침 시 placeholder 텍스트가 그대로 나오는 버그 — 원인 확정 + 수정 완료.** 실제 사용자 DB(`~/.meeting_log/meetings.db`, id=5 "New Recording 7")의 커스텀 `summary_template`과 실제 전사로 `app.summarizer.summarize()`를 직접 3회 반복 호출해 재현: 로컬 3B 모델(`Qwen2.5-3B-Instruct-4bit`)이 프롬프트의 "형식:" 섹션에 있는 괄호 예시 문구(예: `- (논의된 주제와 구체적인 내용)`)를 채워야 할 자리가 아니라 그대로 이어 써도 되는 텍스트로 취급해 통째로 베껴 씀(3회 중 "결정 사항" 섹션은 3회 모두 예시 그대로 출력). 프롬프트에 "베끼지 마라"는 지시만 추가하는 건 불충분했음(재현 유지). **베낄 대상 문자열 자체를 지우는 방식**(`app/summarizer.py`의 `_strip_examples()` — `- (...)`/`- [ ] (...)`/단독 `(...)` 줄의 괄호 내용만 제거)으로 `summarize()`에서 생성 직전에 적용하니 같은 프롬프트 3회 재실행 모두 placeholder 없이 실제 내용 생성 확인. 저장된 템플릿 자체는 건드리지 않고 생성 시점에만 동적으로 적용되므로 기본/커스텀 양식 모두에 적용됨. 회귀 테스트 `tests/test_summarizer.py::test_summarize_strips_bracketed_examples_from_template` 추가. **주의**: 실DB의 회의 id=5는 아직 예전(버그) 요약이 그대로 저장돼 있음 — 앱에서 "요약 새로고침"을 눌러야 새 요약으로 갱신됨(사용자 확인 없이 실DB를 직접 고치지 않았음). (2026-07-17 3차 세션)
 
 ## 2. 일반 규칙 (다음에도 적용할 교훈)
@@ -41,7 +41,7 @@
 
 ## 3. 미해결 실패 (Open failures) ★실패 사유 필수
 <!-- 아직 원인을 못 밝힌 문제. 다음 세션의 출발점. -->
-- **[해결됨] frameless 신호등 버튼이 안 보였던 문제.** 원인: pywebview의 macOS 백엔드(`webview/platforms/cocoa.py` 698-710번 줄 근처)가 `frameless=True`일 때 `standardWindowButton_(...).setHidden_(True)`로 닫기/최소화/최대화 버튼 3개를 **코드에서 명시적으로 숨긴다.** 여백을 아무리 줘도 애초에 hidden이라 안 보이는 게 정상 동작이었음 — pywebview는 Electron의 `titleBarStyle: hiddenInset`(타이틀바 투명 + 버튼 유지) 같은 옵션을 제공하지 않는다. **조치**: `app/main.py`에서 `frameless=True`/`easy_drag=True` 제거하고 대신 창 제목을 빈 문자열(`""`)로 바꿔 네이티브 창(신호등 정상 동작)은 유지하면서 "회의록" 텍스트만 없앰. `.topbar`의 `padding-left: 80px`도 되돌림(더 이상 안 겹치므로 불필요). **아직 실제 GUI로 시각 확인은 안 됨** — 이번 세션도 헤드리스라 `python3 -m app.main`을 블로킹 실행해보지 않음(import 사인 체크만 통과). 다음에 포코가 직접 실행해서 신호등 정상 표시 + 타이틀 텍스트 안 보이는지 확인 필요.
+- **[해결됨] frameless 신호등 버튼이 안 보였던 문제.** 원인: pywebview의 macOS 백엔드(`webview/platforms/cocoa.py` 698-710번 줄 근처)가 `frameless=True`일 때 `standardWindowButton_(...).setHidden_(True)`로 닫기/최소화/최대화 버튼 3개를 **코드에서 명시적으로 숨긴다.** 여백을 아무리 줘도 애초에 hidden이라 안 보이는 게 정상 동작이었음 — pywebview는 Electron의 `titleBarStyle: hiddenInset`(타이틀바 투명 + 버튼 유지) 같은 옵션을 제공하지 않는다. **조치**: `app/main.py`에서 `frameless=True`/`easy_drag=True` 제거하고 대신 창 제목을 빈 문자열(`""`)로 바꿔 네이티브 창(신호등 정상 동작)은 유지하면서 "회의록" 텍스트만 없앰. `.topbar`의 `padding-left: 80px`도 되돌림(더 이상 안 겹치므로 불필요). **포코가 6차 세션에서 `python3 -m app.main`을 프로젝트 폴더 안에서 직접 실행해 GUI 정상 확인함**(이전 세션 실패는 다른 디렉토리에서 실행해 `ModuleNotFoundError: No module named 'app'`가 난 것 — 코드 문제 아님, 반드시 `cd ~/Desktop/go/meeting_log` 후 실행해야 함).
 - **[해결됨] 기존 녹음 파일의 길이(duration)가 목록에 안 보임.** → 위 "검증된 사실"의 백필 항목 참고. `app/api.py`에 시작 시 백그라운드로 도는 `_backfill_durations()` 추가 완료.
 - **[해결됨] 기존 녹음 파일에서 "요약 새로고침" 시 요약이 비거나 템플릿 placeholder 텍스트 그대로 나옴.** → 위 "검증된 사실"의 요약 버그 항목 참고. 원인(3B 모델의 괄호 예시 echo) 확정 + `_strip_examples()`로 수정 + 회귀 테스트 추가. 실DB의 기존 요약은 "요약 새로고침"을 눌러야 갱신됨.
 
@@ -76,9 +76,8 @@
   3. 전체 테스트 44개 통과 확인(`python3 -m pytest`).
 - **4차 세션 (2026-07-17, 계획 전용 세션 — 코드 수정 없음)**: 포코의 "요약이 분량에 비례하지 않고 할루시네이션 있다" 보고를 실DB·실모델로 재현·진단(위 "요약 품질 재진단" 참고). Qwen3-4B-2507 다운로드 + 비교 실험 + OOM 해결책까지 검증 완료. **실행 계획 `~/.claude/plans/soft-churning-curry.md` 승인됨 — 다음 세션(다른 모델)이 이 계획대로 실행할 것.** 범위: Part A 요약 개선(모델 교체·단일 패스·OOM 대책), Part B 가져온 오디오 복사, Part C 커밋 정리, Part D 검증. 폴더 기능(~1세션, 10-15만 토큰)과 ANE 교체(2-4세션, 30-60만 토큰, 보류 권고)는 규모 산정만 하고 제외 — 포코 결정 대기.
 - **5차 세션 (2026-07-17, `~/.claude/plans/soft-churning-curry.md` 실행)**: Part A(요약 품질: 모델 교체·단일 패스 확대·OOM 대책·비례 길이·메타 문장 필터), Part B(가져온 오디오 recordings_dir 복사) 구현 완료. Part D 검증: pytest 49개 통과, 실DB id=7로 `summarize()` 직접 실행해 품질 확인(전·후반부 반영, 왜곡 없음), `?mock=1` 브라우저 하니스로 UI 회귀 없음 확인. 자세한 내용은 위 "검증된 사실"의 "요약 품질 개선 실행 완료" 항목 참고. Part C(커밋 정리)는 이 세션에서 이어서 진행 — 논리 단위로 커밋하되 push/PR은 포코 확인 후.
+- **6차 세션 (2026-07-17, `~/.claude/plans/attach-polymorphic-chipmunk.md` 실행)**: 포코가 프로젝트 폴더 안에서 `python3 -m app.main` 직접 실행해 GUI(신호등·타이틀·길이 백필·오디오 복사 등) 정상 확인. 회의 삭제 시 오디오 파일 삭제 여부를 매번 물어보는 기능 구현(위 "검증된 사실" 참고). **push + PR 진행**: `chore/project-cleanup-state-md` 브랜치 4개 커밋(5bbeaed, e3233f8, d7dcf6c, d9d97b7)을 push. **PR #1은 이미 2026-07-16에 머지 완료된 상태였음**(이번 세션 전에 확인) — 그래서 같은 브랜치로 **새 PR #2**를 생성함(https://github.com/postcoitum/meeting_log/pull/2). PR #2 머지는 포코 결정.
 - 다음에 할 것:
-  1. **`python3 -m app.main`으로 실제 앱 실행** — (a) 신호등/타이틀 텍스트 GUI로 직접 확인 (b) 길이 백필·요약 수정·가져온 오디오 복사가 실제 앱에서도 잘 도는지 확인 (c) 실DB 기존 회의에서 "요약 새로고침" 눌러서 새(4B) 요약이 제대로 나오는지 확인. **이번 세션들도 대부분 헤드리스라 pywebview GUI로 직접 확인 못 함 — `?mock=1` 웹 하니스로만 확인함.**
-  2. PR #1(`chore/project-cleanup-state-md`) 머지 여부는 포코 결정 — 위 1번 GUI 검증 끝난 뒤 커밋/PR 순서 조율.
-  3. `delete_meeting()`이 recordings_dir 안의 오디오 파일도 함께 지울지는 포코 결정 사항(현재는 DB row만 삭제, 파일은 안 지움).
-  4. 폴더 기능/ANE 엔진 교체는 포코가 다음에 우선순위 정할 것.
-- **커밋 상태**: 3~5차 세션 변경 전부 이번 세션에서 논리 단위로 커밋 완료(아래 참고). push/PR은 포코 확인 전이라 안 함.
+  1. GitHub에서 **PR #2 머지 여부 결정**(포코).
+  2. 폴더 기능/ANE 엔진 교체는 포코가 다음에 우선순위 정할 것.
+- **커밋 상태**: 3~6차 세션 변경 전부 논리 단위로 커밋 완료 + push 완료. **PR #2가 머지 대기 중.**
