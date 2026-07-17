@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import app.api as api_mod
 from app.store import Store
 
@@ -16,18 +18,43 @@ def make_api(tmp_path, monkeypatch):
     return api_mod.Api(store=store, hf_token="tok")
 
 
+def add_and_wait(api, path, title=None):
+    """add_meeting은 이제 큐에 넣고 즉시 리턴한다 — 백그라운드 워커가
+    끝날 때까지 기다린 뒤(큐가 비면 join()이 리턴), 최종 상태를 다시 읽는다."""
+    m = api.add_meeting(path, title=title)
+    api._queue.join()
+    return api.get_meeting(m["id"])
+
+
+def stop_and_wait(api):
+    m = api.stop_recording()
+    api._queue.join()
+    return api.get_meeting(m["id"])
+
+
 def test_add_meeting_creates_with_transcript_and_summary(tmp_path, monkeypatch):
     api = make_api(tmp_path, monkeypatch)
-    m = api.add_meeting("/some/audio.m4a")
+    m = add_and_wait(api, "/some/audio.m4a")
     assert m["transcript"] == "화자 1: 안녕"
     assert m["summary_md"] == "## 요약\n- x"
     assert m["title"] == "audio"
     assert "화자 1" in m["stats_json"]
+    assert m["status"] == "done"
+
+
+def test_add_meeting_is_queued_immediately(tmp_path, monkeypatch):
+    """add_meeting 자체는 처리를 기다리지 않고 바로 리턴해야 한다 —
+    이게 '다른 파일을 병행해서 넣을 수 있는' 근거."""
+    api = make_api(tmp_path, monkeypatch)
+    m = api.add_meeting("/some/audio.m4a")
+    assert m["status"] in ("queued", "processing", "done")
+    assert m["title"] == "audio"
+    api._queue.join()
 
 
 def test_update_and_get(tmp_path, monkeypatch):
     api = make_api(tmp_path, monkeypatch)
-    m = api.add_meeting("/a/b.m4a")
+    m = add_and_wait(api, "/a/b.m4a")
     assert api.update_meeting(m["id"], {"memo_md": "내 메모"}) is True
     assert api.get_meeting(m["id"])["memo_md"] == "내 메모"
 
@@ -36,6 +63,7 @@ def test_list_after_add(tmp_path, monkeypatch):
     api = make_api(tmp_path, monkeypatch)
     api.add_meeting("/a/one.m4a")
     assert len(api.list_meetings()) == 1
+    api._queue.join()
 
 
 def test_recording_flow_creates_meeting(tmp_path, monkeypatch):
@@ -61,7 +89,7 @@ def test_recording_flow_creates_meeting(tmp_path, monkeypatch):
     assert api.start_recording() is True
     assert api.is_recording() is True
 
-    m = api.stop_recording()
+    m = stop_and_wait(api)
     assert m["title"].startswith("녹음 ")
     assert m["transcript"] == "화자 1: 안녕"
     assert api.is_recording() is False
@@ -83,7 +111,7 @@ def test_pick_audio_cancel_returns_empty(tmp_path, monkeypatch):
 
 def test_chat_meeting_uses_transcript(tmp_path, monkeypatch):
     api = make_api(tmp_path, monkeypatch)
-    m = api.add_meeting("/a/b.m4a")
+    m = add_and_wait(api, "/a/b.m4a")
     captured = {}
 
     def fake_chat(transcript, question):
@@ -99,7 +127,7 @@ def test_chat_meeting_uses_transcript(tmp_path, monkeypatch):
 
 def test_export_meeting_writes_markdown(tmp_path, monkeypatch):
     api = make_api(tmp_path, monkeypatch)
-    m = api.add_meeting("/a/b.m4a")
+    m = add_and_wait(api, "/a/b.m4a")
     dest = str(tmp_path / "out.md")
     monkeypatch.setattr(
         api_mod.webview, "active_window",
@@ -115,7 +143,7 @@ def test_export_meeting_writes_markdown(tmp_path, monkeypatch):
 
 def test_copy_for_notion_pipes_markdown_to_pbcopy(tmp_path, monkeypatch):
     api = make_api(tmp_path, monkeypatch)
-    m = api.add_meeting("/a/b.m4a")
+    m = add_and_wait(api, "/a/b.m4a")
     captured = {}
 
     def fake_run(cmd, input=None, check=False):
@@ -148,7 +176,7 @@ def test_summary_template_roundtrip(tmp_path, monkeypatch):
 
 def test_regen_uses_custom_template(tmp_path, monkeypatch):
     api = make_api(tmp_path, monkeypatch)
-    m = api.add_meeting("/a/b.m4a")
+    m = add_and_wait(api, "/a/b.m4a")
     api.set_summary_template("커스텀! {transcript}")
     captured = {}
 
@@ -177,11 +205,51 @@ def test_add_meeting_prefers_db_token(tmp_path, monkeypatch):
         return ("화자 1: 안녕", FAKE_STATS)
 
     monkeypatch.setattr(api_mod, "transcribe_meeting", fake_transcribe)
-    api.add_meeting("/a/b.m4a")
+    add_and_wait(api, "/a/b.m4a")
     assert captured["token"] == "tok"  # 설정 없음 → 생성자(환경변수) 폴백
     api.set_hf_token("hf_db_token")
-    api.add_meeting("/a/c.m4a")
+    add_and_wait(api, "/a/c.m4a")
     assert captured["token"] == "hf_db_token"  # 설정이 우선
+
+
+def test_add_meeting_copies_external_file_into_recordings_dir(tmp_path, monkeypatch):
+    store = Store(str(tmp_path / "t.db"))
+    monkeypatch.setattr(
+        api_mod, "transcribe_meeting",
+        lambda path, token, progress=None, num_speakers=None, rates=None, timings_out=None: (path, FAKE_STATS),
+    )
+    monkeypatch.setattr(api_mod, "summarize", lambda text, template=None: "## 요약\n- x")
+    recordings_dir = tmp_path / "recordings"
+    recordings_dir.mkdir()
+    api = api_mod.Api(store=store, hf_token="tok", recordings_dir=str(recordings_dir))
+
+    src = tmp_path / "downloads" / "meeting.m4a"
+    src.parent.mkdir()
+    src.write_bytes(b"fake audio")
+
+    m = add_and_wait(api, str(src))
+    stored_path = m["transcript"]  # fake_transcribe echoes the path it received
+    assert Path(stored_path).parent == recordings_dir
+    assert Path(stored_path).exists()
+    assert src.exists()  # 원본은 그대로 남아 있어야 함
+
+
+def test_add_meeting_skips_copy_when_already_in_recordings_dir(tmp_path, monkeypatch):
+    store = Store(str(tmp_path / "t.db"))
+    monkeypatch.setattr(
+        api_mod, "transcribe_meeting",
+        lambda path, token, progress=None, num_speakers=None, rates=None, timings_out=None: (path, FAKE_STATS),
+    )
+    monkeypatch.setattr(api_mod, "summarize", lambda text, template=None: "## 요약\n- x")
+    recordings_dir = tmp_path / "recordings"
+    recordings_dir.mkdir()
+    api = api_mod.Api(store=store, hf_token="tok", recordings_dir=str(recordings_dir))
+
+    already_there = recordings_dir / "rec_20260101_000000.wav"
+    already_there.write_bytes(b"fake audio")
+
+    m = add_and_wait(api, str(already_there))
+    assert m["transcript"] == str(already_there)  # 복사 안 되고 원경로 그대로 사용됨
 
 
 def test_num_speakers_setting_passed_to_transcribe(tmp_path, monkeypatch):
@@ -193,11 +261,11 @@ def test_num_speakers_setting_passed_to_transcribe(tmp_path, monkeypatch):
         return ("화자 1: 안녕", FAKE_STATS)
 
     monkeypatch.setattr(api_mod, "transcribe_meeting", fake_transcribe)
-    api.add_meeting("/a/a.m4a")
+    add_and_wait(api, "/a/a.m4a")
     assert captured["n"] is None  # 기본: 자동
     api.set_num_speakers("1")
     assert api.get_num_speakers() == "1"
-    api.add_meeting("/a/b.m4a")
+    add_and_wait(api, "/a/b.m4a")
     assert captured["n"] == 1
 
 
@@ -216,7 +284,7 @@ def test_rates_learned_after_add(tmp_path, monkeypatch):
 
     monkeypatch.setattr(api_mod, "transcribe_meeting", fake_transcribe)
     monkeypatch.setattr(api_mod, "summarize", fake_summarize)
-    api.add_meeting("/a/b.m4a")
+    add_and_wait(api, "/a/b.m4a")
     import json as _json
     rates = _json.loads(api._store.get_setting("stage_rates"))
     assert abs(rates["transcribe"] - 0.06) < 1e-6
