@@ -252,6 +252,69 @@ def test_add_meeting_skips_copy_when_already_in_recordings_dir(tmp_path, monkeyp
     assert m["transcript"] == str(already_there)  # 복사 안 되고 원경로 그대로 사용됨
 
 
+def test_delete_meeting_removes_audio_file_when_requested(tmp_path, monkeypatch):
+    store = Store(str(tmp_path / "t.db"))
+    monkeypatch.setattr(
+        api_mod, "transcribe_meeting",
+        lambda path, token, progress=None, num_speakers=None, rates=None, timings_out=None: (path, FAKE_STATS),
+    )
+    monkeypatch.setattr(api_mod, "summarize", lambda text, template=None: "## 요약\n- x")
+    recordings_dir = tmp_path / "recordings"
+    recordings_dir.mkdir()
+    api = api_mod.Api(store=store, hf_token="tok", recordings_dir=str(recordings_dir))
+
+    audio = recordings_dir / "rec_20260101_000000.wav"
+    audio.write_bytes(b"fake audio")
+    m = add_and_wait(api, str(audio))
+
+    assert api.delete_meeting(m["id"], True) is True
+    assert not audio.exists()
+    assert api.get_meeting(m["id"]) is None
+
+
+def test_delete_meeting_keeps_audio_file_by_default(tmp_path, monkeypatch):
+    store = Store(str(tmp_path / "t.db"))
+    monkeypatch.setattr(
+        api_mod, "transcribe_meeting",
+        lambda path, token, progress=None, num_speakers=None, rates=None, timings_out=None: (path, FAKE_STATS),
+    )
+    monkeypatch.setattr(api_mod, "summarize", lambda text, template=None: "## 요약\n- x")
+    recordings_dir = tmp_path / "recordings"
+    recordings_dir.mkdir()
+    api = api_mod.Api(store=store, hf_token="tok", recordings_dir=str(recordings_dir))
+
+    audio = recordings_dir / "rec_20260101_000000.wav"
+    audio.write_bytes(b"fake audio")
+    m = add_and_wait(api, str(audio))
+
+    assert api.delete_meeting(m["id"]) is True  # delete_audio 기본값 False
+    assert audio.exists()
+    assert api.get_meeting(m["id"]) is None
+
+
+def test_delete_meeting_does_not_delete_audio_outside_recordings_dir(tmp_path, monkeypatch):
+    store = Store(str(tmp_path / "t.db"))
+    monkeypatch.setattr(
+        api_mod, "transcribe_meeting",
+        lambda path, token, progress=None, num_speakers=None, rates=None, timings_out=None: (path, FAKE_STATS),
+    )
+    monkeypatch.setattr(api_mod, "summarize", lambda text, template=None: "## 요약\n- x")
+    recordings_dir = tmp_path / "recordings"
+    recordings_dir.mkdir()
+    api = api_mod.Api(store=store, hf_token="tok", recordings_dir=str(recordings_dir))
+
+    outside = tmp_path / "downloads" / "meeting.m4a"
+    outside.parent.mkdir()
+    outside.write_bytes(b"fake audio")
+    # 옛 DB row가 recordings_dir 바깥 경로를 가리키는 상황(id 3~7 케이스) 재현 —
+    # 실제 add_meeting은 항상 recordings_dir로 복사하므로 직접 row를 만든다.
+    mid = store.create_meeting("t", "2026-01-01T00:00:00+00:00", str(outside), status="done")
+
+    assert api.delete_meeting(mid, True) is True
+    assert outside.exists()  # 바깥 경로는 건드리지 않음
+    assert api.get_meeting(mid) is None
+
+
 def test_num_speakers_setting_passed_to_transcribe(tmp_path, monkeypatch):
     api = make_api(tmp_path, monkeypatch)
     captured = {}

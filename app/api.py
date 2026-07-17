@@ -88,7 +88,28 @@ class Api:
         self._store.update_fields(meeting_id, **fields)
         return True
 
-    def delete_meeting(self, meeting_id: int) -> bool:
+    def _path_in_recordings_dir(self, path: Path) -> bool:
+        """path가 self._recordings_dir 바로 아래에 있는지 확인.
+        존재하지 않는 경로 등 resolve() 실패는 False로 취급(안전 쪽으로 폴백)."""
+        try:
+            return path.resolve().parent == self._recordings_dir.resolve()
+        except OSError:
+            return False
+
+    def delete_meeting(self, meeting_id: int, delete_audio: bool = False) -> bool:
+        """meeting_id를 DB에서 삭제한다. delete_audio=True면 recordings_dir 안에
+        있는 오디오 파일도 함께 지운다 — 바깥 경로(가져오기 실패 등으로 원본 그대로
+        남은 old row)는 안전을 위해 건드리지 않는다. 프론트가 항상 사용자에게
+        오디오 삭제 여부를 물어본 뒤 이 값을 넘긴다."""
+        if delete_audio:
+            meeting = self._store.get_meeting(meeting_id)
+            if meeting and meeting.get("audio_path"):
+                audio_path = Path(meeting["audio_path"])
+                if self._path_in_recordings_dir(audio_path):
+                    try:
+                        audio_path.unlink(missing_ok=True)
+                    except OSError:
+                        pass  # best-effort — 파일 삭제 실패해도 DB 삭제는 계속
         self._store.delete_meeting(meeting_id)
         return True
 

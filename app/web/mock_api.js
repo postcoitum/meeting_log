@@ -76,7 +76,7 @@
         if (m) Object.assign(m, fields);
         return true;
       },
-      async delete_meeting(id) {
+      async delete_meeting(id, deleteAudio) {
         const i = meetings.findIndex((m) => m.id === id);
         if (i >= 0) meetings.splice(i, 1);
         return true;

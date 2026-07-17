@@ -339,7 +339,8 @@ function bind() {
     if (!currentId) return;
     const m = meetingsCache.find((x) => x.id === currentId);
     if (!confirm(`"${m ? m.title : ""}" 회의를 삭제할까요?`)) return;
-    await api("delete_meeting", currentId);
+    const deleteAudio = confirm("오디오 파일도 함께 삭제할까요?");
+    await api("delete_meeting", currentId, deleteAudio);
     currentId = null;
     setSummaryEditMode(false);
     setSummaryView("");
