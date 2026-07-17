@@ -353,3 +353,105 @@ def test_rates_learned_after_add(tmp_path, monkeypatch):
     assert abs(rates["transcribe"] - 0.06) < 1e-6
     assert abs(rates["diarize"] - 0.5) < 1e-6
     assert rates["summary_chunk_sec"] > 0
+
+
+def test_folder_crud_via_api(tmp_path, monkeypatch):
+    api = make_api(tmp_path, monkeypatch)
+    f = api.create_folder("업무")
+    assert f["name"] == "업무" and isinstance(f["id"], int)
+    assert [x["name"] for x in api.list_folders()] == ["업무"]
+    assert api.rename_folder(f["id"], "회사업무") is True
+    assert [x["name"] for x in api.list_folders()] == ["회사업무"]
+    assert api.delete_folder(f["id"]) is True
+    assert api.list_folders() == []
+
+
+def test_move_meeting_to_folder_via_update(tmp_path, monkeypatch):
+    api = make_api(tmp_path, monkeypatch)
+    f = api.create_folder("업무")
+    m = add_and_wait(api, "/a/one.m4a")
+    assert api.update_meeting(m["id"], {"folder_id": f["id"]}) is True
+    assert api.get_meeting(m["id"])["folder_id"] == f["id"]
+    assert api.update_meeting(m["id"], {"folder_id": None}) is True
+    assert api.get_meeting(m["id"])["folder_id"] is None
+
+
+def test_delete_folder_cascades_contained_meetings_only(tmp_path, monkeypatch):
+    api = make_api(tmp_path, monkeypatch)
+    f = api.create_folder("삭제폴더")
+    m1 = add_and_wait(api, "/a/in1.m4a")
+    m2 = add_and_wait(api, "/a/in2.m4a")
+    m3 = add_and_wait(api, "/a/out.m4a")
+    api.update_meeting(m1["id"], {"folder_id": f["id"]})
+    api.update_meeting(m2["id"], {"folder_id": f["id"]})
+    assert api.delete_folder(f["id"]) is True
+    assert api.get_meeting(m1["id"]) is None
+    assert api.get_meeting(m2["id"]) is None
+    assert api.get_meeting(m3["id"]) is not None
+    assert api.list_folders() == []
+
+
+def test_delete_folder_removes_audio_when_requested(tmp_path, monkeypatch):
+    # test_delete_meeting_removes_audio_file_when_requested(255줄)와 동일한 셋업
+    store = Store(str(tmp_path / "t.db"))
+    monkeypatch.setattr(
+        api_mod, "transcribe_meeting",
+        lambda path, token, progress=None, num_speakers=None, rates=None, timings_out=None: (path, FAKE_STATS),
+    )
+    monkeypatch.setattr(api_mod, "summarize", lambda text, template=None: "## 요약\n- x")
+    recordings_dir = tmp_path / "recordings"
+    recordings_dir.mkdir()
+    api = api_mod.Api(store=store, hf_token="tok", recordings_dir=str(recordings_dir))
+
+    audio = recordings_dir / "rec_20260101_000000.wav"
+    audio.write_bytes(b"fake audio")
+    m = add_and_wait(api, str(audio))
+    f = api.create_folder("업무")
+    api.update_meeting(m["id"], {"folder_id": f["id"]})
+
+    assert api.delete_folder(f["id"], True) is True
+    assert not audio.exists()
+    assert api.get_meeting(m["id"]) is None
+
+
+def test_delete_folder_keeps_audio_by_default(tmp_path, monkeypatch):
+    store = Store(str(tmp_path / "t.db"))
+    monkeypatch.setattr(
+        api_mod, "transcribe_meeting",
+        lambda path, token, progress=None, num_speakers=None, rates=None, timings_out=None: (path, FAKE_STATS),
+    )
+    monkeypatch.setattr(api_mod, "summarize", lambda text, template=None: "## 요약\n- x")
+    recordings_dir = tmp_path / "recordings"
+    recordings_dir.mkdir()
+    api = api_mod.Api(store=store, hf_token="tok", recordings_dir=str(recordings_dir))
+
+    audio = recordings_dir / "rec_20260101_000000.wav"
+    audio.write_bytes(b"fake audio")
+    m = add_and_wait(api, str(audio))
+    f = api.create_folder("업무")
+    api.update_meeting(m["id"], {"folder_id": f["id"]})
+
+    assert api.delete_folder(f["id"]) is True
+    assert audio.exists()
+    assert api.get_meeting(m["id"]) is None
+
+
+def test_backfill_uses_transcript_timestamps_when_audio_missing(tmp_path, monkeypatch):
+    api = make_api(tmp_path, monkeypatch)
+    # 오디오 원본이 삭제된 기존 회의를 재현: status done, duration 0, 파일 없음
+    mid = api._store.create_meeting(
+        "옛회의", "2026-06-20T10:00:00", str(tmp_path / "gone.m4a"),
+        "[0:00:00] 화자 1: 안녕\n[0:12:34] 화자 2: 마지막 발언",
+    )
+    api._backfill_durations()  # 직접 호출 (백그라운드 스레드와 동일 로직, 멱등)
+    assert api.get_meeting(mid)["duration_sec"] == 12 * 60 + 34
+
+
+def test_backfill_skips_when_no_timestamps_and_no_audio(tmp_path, monkeypatch):
+    api = make_api(tmp_path, monkeypatch)
+    mid = api._store.create_meeting(
+        "타임스탬프없음", "2026-06-20T10:00:00", str(tmp_path / "gone.m4a"),
+        "화자 1: 타임스탬프 없는 전사",
+    )
+    api._backfill_durations()
+    assert api.get_meeting(mid)["duration_sec"] == 0
