@@ -55,34 +55,93 @@ async function refreshList() {
   renderList();
 }
 
+const STATUS_LABEL = { queued: "대기중", processing: "처리중…", error: "실패" };
+
+function sortMeetings(list, mode) {
+  const arr = [...list];
+  if (mode === "date_asc") {
+    arr.sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id - b.id);
+  } else if (mode === "title_asc") {
+    arr.sort((a, b) => a.title.localeCompare(b.title, "ko"));
+  } else if (mode === "duration_desc") {
+    arr.sort((a, b) => (b.duration_sec || 0) - (a.duration_sec || 0));
+  } else {
+    arr.sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id - a.id);
+  }
+  return arr;
+}
+
+function renderItem(el, m) {
+  const d = document.createElement("div");
+  const statusCls = m.status && m.status !== "done" ? " " + m.status : "";
+  d.className = "meeting-item" + (m.id === currentId ? " active" : "") + statusCls;
+  const title = document.createElement("span");
+  title.className = "meeting-item-title";
+  title.textContent = m.title;
+  d.appendChild(title);
+  const meta = document.createElement("span");
+  meta.className = "meeting-item-meta";
+  if (m.status === "queued" || m.status === "error") {
+    meta.textContent = STATUS_LABEL[m.status];
+  } else if (m.status === "processing") {
+    meta.textContent = m._stage || STATUS_LABEL.processing;
+  } else if (m.duration_sec) {
+    meta.textContent = fmtTime(Math.round(m.duration_sec));
+  }
+  d.appendChild(meta);
+  d.title = m.title;
+  d.onclick = () => openMeeting(m.id);
+  el.appendChild(d);
+}
+
 function renderList() {
   const q = $("search").value.trim().toLowerCase();
-  const filtered = q
+  const sortMode = $("sort-select") ? $("sort-select").value : "date_desc";
+  let filtered = q
     ? meetingsCache.filter((m) => m.title.toLowerCase().includes(q))
     : meetingsCache;
+  filtered = sortMeetings(filtered, sortMode);
   const el = $("meeting-list");
   el.innerHTML = "";
-  for (const [date, items] of Object.entries(groupByDate(filtered))) {
-    const h = document.createElement("div");
-    h.className = "date-group";
-    h.textContent = date;
-    el.appendChild(h);
-    for (const m of items) {
-      const d = document.createElement("div");
-      d.className = "meeting-item" + (m.id === currentId ? " active" : "");
-      d.textContent = m.title;
-      d.title = m.title;
-      d.onclick = () => openMeeting(m.id);
-      el.appendChild(d);
+  const useGroups = sortMode === "date_desc" || sortMode === "date_asc";
+  if (useGroups) {
+    for (const [date, items] of Object.entries(groupByDate(filtered))) {
+      const h = document.createElement("div");
+      h.className = "date-group";
+      h.textContent = date;
+      el.appendChild(h);
+      for (const m of items) renderItem(el, m);
     }
+  } else {
+    for (const m of filtered) renderItem(el, m);
   }
+}
+
+function setSummaryView(md) {
+  $("summary").value = md;
+  $("summary-view").innerHTML = renderSummaryMarkdown(md);
+}
+
+function setSummaryEditMode(on) {
+  $("summary").classList.toggle("hidden", !on);
+  $("summary-view").classList.toggle("hidden", on);
+  if (on) $("summary").focus();
 }
 
 async function openMeeting(id) {
   currentId = id;
   const m = await api("get_meeting", id);
   if (!m) return;
-  $("summary").value = m.summary_md || "";
+  setSummaryEditMode(false);
+  if (m.status === "queued" || m.status === "processing") {
+    setSummaryView("");
+    $("summary-view").innerHTML = `<p>처리 중입니다… 목록에서 진행 상황을 확인하세요.</p>`;
+  } else if (m.status === "error") {
+    setSummaryView("");
+    $("summary-view").innerHTML = `<p>처리 중 오류가 발생했습니다.</p>`;
+  } else {
+    setSummaryView(m.summary_md || "");
+  }
   $("memo").value = m.memo_md || "";
   $("transcript").textContent = m.transcript || "";
   renderStats(m.stats_json);
@@ -181,11 +240,10 @@ async function toggleRecord() {
   try {
     if (await api("is_recording")) {
       stopRecUI();
-      setProgress("녹음 처리 중…");
+      // stop_recording도 add_meeting과 동일하게 큐에 넣고 바로 리턴한다.
       const m = await api("stop_recording");
       await refreshList();
       await openMeeting(m.id);
-      setProgress("");
     } else {
       await api("start_recording");
       startRecUI();
@@ -235,9 +293,33 @@ function applyOpacity(value) {
 /* ---------- 바인딩 ---------- */
 
 function bind() {
-  $("summary").addEventListener("input", saveSummary);
+  $("summary").addEventListener("input", () => {
+    saveSummary();
+    $("summary-view").innerHTML = renderSummaryMarkdown($("summary").value);
+  });
   $("memo").addEventListener("input", saveMemo);
   $("search").addEventListener("input", renderList);
+  $("sort-select").addEventListener("change", renderList);
+
+  $("toggle-summary-edit").onclick = () => {
+    setSummaryEditMode($("summary").classList.contains("hidden"));
+  };
+
+  $("summary-view").addEventListener("click", (e) => {
+    const li = e.target.closest(".sum-check-item");
+    if (!li || !currentId) return;
+    const raw = li.dataset.raw;
+    const checked = li.classList.contains("checked");
+    const newRaw = checked
+      ? raw.replace(/\[[xX]\]/, "[ ]")
+      : raw.replace(/\[\s\]/, "[x]");
+    const full = $("summary").value;
+    const idx = full.indexOf(raw);
+    if (idx === -1) return;
+    const updated = full.slice(0, idx) + newRaw + full.slice(idx + raw.length);
+    setSummaryView(updated);
+    saveSummary();
+  });
 
   $("toggle-sidebar").onclick = () =>
     $("layout").classList.toggle("sidebar-hidden");
@@ -257,9 +339,11 @@ function bind() {
     if (!currentId) return;
     const m = meetingsCache.find((x) => x.id === currentId);
     if (!confirm(`"${m ? m.title : ""}" 회의를 삭제할까요?`)) return;
-    await api("delete_meeting", currentId);
+    const deleteAudio = confirm("오디오 파일도 함께 삭제할까요?");
+    await api("delete_meeting", currentId, deleteAudio);
     currentId = null;
-    $("summary").value = "";
+    setSummaryEditMode(false);
+    setSummaryView("");
     $("memo").value = "";
     $("transcript").textContent = "";
     renderStats("");
@@ -272,7 +356,7 @@ function bind() {
     setProgress("요약 생성 중…");
     try {
       const summary = await api("summarize_meeting", currentId);
-      $("summary").value = summary;
+      setSummaryView(summary);
     } catch (e) {
       setProgress("요약 실패: " + e);
       return;
@@ -317,16 +401,15 @@ function bind() {
   $("new-meeting").onclick = async () => {
     const path = await api("pick_audio");
     if (!path) return;
-    setProgress("처리 중…");
+    // add_meeting은 큐에 넣고 바로 리턴한다 — 처리를 기다리지 않으므로
+    // 이 버튼을 다시 눌러 다른 파일을 곧바로 또 추가할 수 있다.
     try {
       const m = await api("add_meeting", path);
       await refreshList();
       await openMeeting(m.id);
     } catch (e) {
       setProgress("실패: " + e);
-      return;
     }
-    setProgress("");
   };
 
   // 설정 모달 (HF 토큰 + 요약 양식)
@@ -352,7 +435,18 @@ function bind() {
     setTimeout(() => setProgress(""), 3000);
   };
 
-  window.addEventListener("progress", (e) => setProgress(e.detail));
+  window.addEventListener("job-progress", async (e) => {
+    const detail = e.detail;
+    if (!detail) return;
+    if (detail.status === "done" || detail.status === "error") {
+      await refreshList();
+      if (currentId === detail.id) await openMeeting(detail.id);
+    } else {
+      const m = meetingsCache.find((x) => x.id === detail.id);
+      if (m) { m.status = detail.status; m._stage = detail.stage; }
+      renderList();
+    }
+  });
 }
 
 window.addEventListener("pywebviewready", async () => {

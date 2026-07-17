@@ -1,7 +1,9 @@
 """로컬 LLM(mlx-lm)으로 전사 스크립트를 마크다운으로 요약."""
 from __future__ import annotations
 
-DEFAULT_SUMMARY_MODEL = "mlx-community/Qwen2.5-3B-Instruct-4bit"
+import re
+
+DEFAULT_SUMMARY_MODEL = "mlx-community/Qwen3-4B-Instruct-2507-4bit"
 
 # 사용자가 설정에서 바꿀 수 있는 기본 요약 양식.
 # {transcript} 자리에 전사 내용(또는 부분 요약 모음)이 들어간다.
@@ -30,17 +32,30 @@ DEFAULT_TEMPLATE = """다음 회의 전사 내용을 읽고, 한국어 회의록
 
 - [ ] (해야 할 일 — 담당자가 언급됐으면 함께 표기)
 
+## 논의 필요 사항
+
+- (결론이 나지 않았거나 다음 회의로 넘긴 안건)
+
 전사 내용:
 {transcript}
 """
 
-# 로컬 3B 모델의 컨텍스트를 넘지 않도록 긴 전사는 조각내 처리한다.
-MAX_INPUT_CHARS = 6000
+# Qwen3-4B-Instruct-2507의 컨텍스트는 262k토큰이라 실질 한계는 컨텍스트가
+# 아니라 메모리(Metal OOM, 아래 mx.set_cache_limit(0) 참고)다. 40,000자
+# (~27k토큰, 대략 1.5~2시간 회의)까지는 단일 패스로 통째로 넣는다 —
+# 2단계 압축(조각 요약 → 재요약)이 짧은 회의에서도 항상 발동해 요약 길이가
+# 회의 길이가 아니라 상수(조각 수·max_tokens)로 결정되는 문제가 있었다.
+MAX_INPUT_CHARS = 40000
 
-_PARTIAL_PROMPT = """다음은 긴 회의 전사의 일부입니다. 이 부분에서 논의된 내용만 한국어로 5줄 이내로 간결히 정리하세요. 지어내지 마세요.
+_PARTIAL_PROMPT = """다음은 긴 회의 전사의 일부입니다. 이 부분에서 논의된 내용을 한국어로 20~30줄로 상세히 정리하세요. 구체적인 수치·이름·결정 사항·맥락을 생략하거나 뭉뚱그리지 말고, 지어내지 마세요.
 
 {transcript}
 """
+
+_MERGE_PROMPT_NOTE = (
+    "\n\n주의: 아래 전사 내용은 한 회의를 구간별로 미리 정리한 것입니다. "
+    "구간 간 중복된 내용만 합치고, 내용을 요약해서 줄이지 마세요.\n"
+)
 
 
 # 모델을 호출마다 다시 로드하지 않도록 캐시 (긴 회의의 조각 요약에서 특히 중요)
@@ -54,9 +69,15 @@ def _load_model(model: str):
     return _MODEL_CACHE[model]
 
 
-def _generate(prompt: str, model: str) -> str:
+def _generate(prompt: str, model: str, max_tokens: int = 1024) -> str:
+    import mlx.core as mx
     from mlx_lm import generate
     from mlx_lm.sample_utils import make_sampler, make_logits_processors
+
+    # 4B 모델로 1만+토큰을 프리필하면 시스템 메모리가 넉넉해도(78% 여유에서도
+    # 재현됨) mlx의 내부 캐시 풀이 쌓여 "[METAL] Insufficient Memory"로
+    # 프로세스가 죽는다(실측). 캐시 상한을 0으로 두면 같은 입력이 정상 완료된다.
+    mx.set_cache_limit(0)
 
     mdl, tokenizer = _load_model(model)
     messages = [{"role": "user", "content": prompt}]
@@ -80,7 +101,7 @@ def _generate(prompt: str, model: str) -> str:
         repetition_penalty=1.12, repetition_context_size=64
     )
     out = generate(
-        mdl, tokenizer, prompt=text, max_tokens=1024, verbose=False,
+        mdl, tokenizer, prompt=text, max_tokens=max_tokens, verbose=False,
         sampler=sampler, logits_processors=logits_processors,
     )
     return _dedupe_repeated_lines(out)
@@ -101,6 +122,36 @@ def _dedupe_repeated_lines(text: str) -> str:
     return "\n".join(out).rstrip()
 
 
+_META_SENTENCE_RE = re.compile(
+    r"^.*(이러한 내용(들)?을 요약하면|요약하면 다음과 같|위 내용을 요약하면|"
+    r"다음은.*요약(입니다|한 내용입니다))\s*.*$",
+    re.M,
+)
+
+
+def _strip_meta_sentences(text: str) -> str:
+    """모델이 가끔 덧붙이는 "이러한 내용을 요약하면…" 류의 군더더기 꼬리 문장을 제거."""
+    return "\n".join(
+        line for line in text.split("\n") if not _META_SENTENCE_RE.match(line)
+    ).strip()
+
+
+def _strip_examples(template: str) -> str:
+    """양식의 "형식:" 섹션에 있는 괄호 예시 문구(예: "- (논의된 주제…)")를 제거한다.
+
+    로컬 3B 모델은 이 괄호 예시를 채워야 할 자리가 아니라 그대로 이어 써도
+    되는 텍스트로 취급해 통째로 베껴 쓰는 경우가 매우 잦다(실제 사용자 회의로
+    재현: 같은 프롬프트 3회 실행 중 "결정 사항" 섹션이 3회 모두 예시 문구
+    그대로 출력됨). 베낄 대상 문자열 자체를 지워버리면 이 실패가 사라지는
+    것을 확인했다 — 프롬프트에 "베끼지 마라"는 지시만 추가하는 것으로는
+    불충분했다.
+    """
+    template = re.sub(r"^(- \[ \] )\(.*\)\s*$", r"\1", template, flags=re.M)
+    template = re.sub(r"^(- )\(.*\)\s*$", r"\1", template, flags=re.M)
+    template = re.sub(r"^\(.*\)\s*$", "", template, flags=re.M)
+    return template
+
+
 def _fill(template: str, transcript: str) -> str:
     """{transcript} 자리 치환. 사용자 양식에 자리표시자가 없으면 뒤에 붙인다.
 
@@ -119,21 +170,42 @@ def summarize(
 ) -> str:
     if not transcript.strip():
         return ""
-    tpl = template or DEFAULT_TEMPLATE
+    tpl = _strip_examples(template or DEFAULT_TEMPLATE)
 
     text = transcript
     if len(text) > MAX_INPUT_CHARS:
-        # 컨텍스트 초과 방지: 조각별 부분 요약 → 통합 요약
-        parts = [
-            text[i : i + MAX_INPUT_CHARS]
-            for i in range(0, len(text), MAX_INPUT_CHARS)
-        ]
+        # 컨텍스트 초과 방지: 조각별 부분 요약 → 통합 요약.
+        # 문장 중간이 아니라 타임스탬프 줄 경계("\n[")에서 잘라 발화가
+        # 조각 사이에서 끊기지 않게 한다.
+        parts = _split_at_timestamp_boundaries(text, MAX_INPUT_CHARS)
         partials = [
-            _generate(_fill(_PARTIAL_PROMPT, p), model).strip() for p in parts
+            _generate(_fill(_PARTIAL_PROMPT, p), model, max_tokens=1200).strip()
+            for p in parts
         ]
-        text = "\n".join(partials)
+        text = _MERGE_PROMPT_NOTE + "\n".join(partials)
 
-    return _generate(_fill(tpl, text), model).strip()
+    max_tokens = min(3072, max(1024, len(text) // 15))
+    out = _generate(_fill(tpl, text), model, max_tokens=max_tokens).strip()
+    return _strip_meta_sentences(out)
+
+
+def _split_at_timestamp_boundaries(text: str, max_chars: int) -> list[str]:
+    """text를 max_chars 근처에서 "\\n[" 타임스탬프 줄 경계에 맞춰 자른다.
+
+    경계를 못 찾으면(타임스탬프 형식이 없는 전사 등) max_chars 지점에서 그냥 자른다.
+    """
+    parts: list[str] = []
+    start = 0
+    n = len(text)
+    while start < n:
+        end = min(start + max_chars, n)
+        if end < n:
+            boundary = text.rfind("\n[", start, end)
+            if boundary > start:
+                end = boundary + 1  # 경계의 개행 문자는 앞 조각에 포함
+        parts.append(text[start:end])
+        start = end
+    return parts
 
 
 _CHAT_PROMPT = """다음은 회의 전사 내용입니다. 이 내용을 근거로 질문에 한국어로 간결하게 답하세요.
