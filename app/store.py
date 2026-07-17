@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 _ALLOWED_UPDATE = {
     "title", "summary_md", "memo_md", "transcript", "stats_json",
-    "duration_sec", "status",
+    "duration_sec", "status", "folder_id",
 }
 
 _SCHEMA = """
@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS meetings (
     stats_json  TEXT NOT NULL DEFAULT '',
     duration_sec REAL NOT NULL DEFAULT 0,
     status      TEXT NOT NULL DEFAULT 'done',
+    folder_id   INTEGER,
     updated_at  TEXT NOT NULL
 );
 """
@@ -48,6 +49,7 @@ class Store:
             "ALTER TABLE meetings ADD COLUMN stats_json TEXT NOT NULL DEFAULT ''",
             "ALTER TABLE meetings ADD COLUMN duration_sec REAL NOT NULL DEFAULT 0",
             "ALTER TABLE meetings ADD COLUMN status TEXT NOT NULL DEFAULT 'done'",
+            "ALTER TABLE meetings ADD COLUMN folder_id INTEGER",
         ):
             try:
                 self._conn.execute(ddl)
@@ -55,6 +57,12 @@ class Store:
                 pass  # 이미 존재
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+        )
+        self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS folders ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "name TEXT NOT NULL UNIQUE, "
+            "created_at TEXT NOT NULL)"
         )
         self._conn.commit()
 
@@ -74,6 +82,46 @@ class Store:
             )
             self._conn.commit()
 
+    def list_folders(self) -> list[dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id, name, created_at FROM folders ORDER BY name"
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def create_folder(self, name: str) -> int:
+        name = (name or "").strip()
+        if not name:
+            raise ValueError("폴더 이름이 비어 있습니다")
+        with self._lock:
+            try:
+                cur = self._conn.execute(
+                    "INSERT INTO folders (name, created_at) VALUES (?, ?)",
+                    (name, _now()),
+                )
+            except sqlite3.IntegrityError:
+                raise ValueError(f"이미 있는 폴더 이름입니다: {name}")
+            self._conn.commit()
+            return int(cur.lastrowid)
+
+    def rename_folder(self, folder_id: int, name: str) -> None:
+        name = (name or "").strip()
+        if not name:
+            raise ValueError("폴더 이름이 비어 있습니다")
+        with self._lock:
+            try:
+                self._conn.execute(
+                    "UPDATE folders SET name = ? WHERE id = ?", (name, folder_id)
+                )
+            except sqlite3.IntegrityError:
+                raise ValueError(f"이미 있는 폴더 이름입니다: {name}")
+            self._conn.commit()
+
+    def delete_folder(self, folder_id: int) -> None:
+        with self._lock:
+            self._conn.execute("DELETE FROM folders WHERE id = ?", (folder_id,))
+            self._conn.commit()
+
     def create_meeting(self, title, created_at, audio_path, transcript="", status="done") -> int:
         with self._lock:
             cur = self._conn.execute(
@@ -87,7 +135,7 @@ class Store:
     def list_meetings(self) -> list[dict]:
         with self._lock:
             rows = self._conn.execute(
-                "SELECT id, title, created_at, duration_sec, status "
+                "SELECT id, title, created_at, duration_sec, status, folder_id "
                 "FROM meetings ORDER BY created_at DESC, id DESC"
             ).fetchall()
         return [dict(r) for r in rows]

@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import queue
+import re
 import shutil
 import subprocess
 import threading
@@ -18,6 +19,16 @@ from app.transcribe import transcribe_meeting
 from app.summarizer import summarize, chat, DEFAULT_TEMPLATE, MAX_INPUT_CHARS
 from app.recorder import Recorder
 from audio_utils import to_wav_16k
+
+_TS_RE = re.compile(r"\[(\d+):(\d{2}):(\d{2})\]")
+
+
+def _duration_from_transcript(text: str) -> float:
+    """전사의 [H:MM:SS] 타임스탬프 중 최댓값(초). 없으면 0."""
+    last = 0
+    for h, m, s in _TS_RE.findall(text or ""):
+        last = max(last, int(h) * 3600 + int(m) * 60 + int(s))
+    return float(last)
 
 
 class Api:
@@ -64,6 +75,11 @@ class Api:
                 continue
             audio_path = Path(full["audio_path"])
             if not audio_path.exists():
+                # 원본 오디오가 삭제된 기존 회의(실DB id=3~7 등):
+                # 전사의 마지막 타임스탬프로 길이를 근사 복원
+                dur = _duration_from_transcript(full.get("transcript", ""))
+                if dur > 0:
+                    self._store.update_fields(m["id"], duration_sec=dur)
                 continue
             wav = None
             try:
@@ -111,6 +127,29 @@ class Api:
                     except OSError:
                         pass  # best-effort — 파일 삭제 실패해도 DB 삭제는 계속
         self._store.delete_meeting(meeting_id)
+        return True
+
+    # --- 폴더 ---
+
+    def list_folders(self) -> list[dict]:
+        return self._store.list_folders()
+
+    def create_folder(self, name: str) -> dict:
+        fid = self._store.create_folder(name)
+        return {"id": fid, "name": (name or "").strip()}
+
+    def rename_folder(self, folder_id: int, name: str) -> bool:
+        self._store.rename_folder(folder_id, name)
+        return True
+
+    def delete_folder(self, folder_id: int, delete_audio: bool = False) -> bool:
+        """폴더와 그 안의 회의를 모두 삭제한다. delete_audio는 각 회의의
+        delete_meeting과 동일한 규칙(recordings_dir 안 파일만)으로 적용.
+        프론트가 삭제 전 사용자에게 한 번만 묻고 전체에 적용한다."""
+        for m in self._store.list_meetings():
+            if m.get("folder_id") == folder_id:
+                self.delete_meeting(m["id"], delete_audio)
+        self._store.delete_folder(folder_id)
         return True
 
     def add_meeting(self, audio_path: str, title: str | None = None) -> dict:
