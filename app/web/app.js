@@ -235,7 +235,7 @@ function renderItem(el, m) {
   if (m.status === "queued" || m.status === "error") {
     meta.textContent = STATUS_LABEL[m.status];
   } else if (m.status === "processing") {
-    meta.textContent = m._stage || STATUS_LABEL.processing;
+    meta.textContent = STATUS_LABEL.processing;
   } else if (m.duration_sec) {
     meta.textContent = fmtTime(Math.round(m.duration_sec));
   }
@@ -612,12 +612,22 @@ function bind() {
   window.addEventListener("job-progress", async (e) => {
     const detail = e.detail;
     if (!detail) return;
-    if (detail.status === "done" || detail.status === "error") {
+    const m = meetingsCache.find((x) => x.id === detail.id);
+    const label = m ? m.title : "";
+    if (detail.status === "done") {
+      setProgress("");
+      await refreshList();
+      if (currentId === detail.id) await openMeeting(detail.id);
+    } else if (detail.status === "error") {
+      setProgress(label ? `${label}: 처리 실패` : "처리 실패");
+      setTimeout(() => setProgress(""), 4000);
       await refreshList();
       if (currentId === detail.id) await openMeeting(detail.id);
     } else {
-      const m = meetingsCache.find((x) => x.id === detail.id);
       if (m) { m.status = detail.status; m._stage = detail.stage; }
+      if (detail.status === "processing") {
+        setProgress(label ? `${label}: ${detail.stage || STATUS_LABEL.processing}` : (detail.stage || STATUS_LABEL.processing));
+      }
       renderList();
     }
   });
